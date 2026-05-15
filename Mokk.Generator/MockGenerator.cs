@@ -40,8 +40,7 @@ public class MockGenerator : IIncrementalGenerator
                 && attr.ConstructorArguments[0].Value is INamedTypeSymbol symbol
                 && (symbol.TypeKind == TypeKind.Interface || (symbol.TypeKind == TypeKind.Class && symbol.IsAbstract)))
             {
-                // Collapse typeof(IMessage<,>) (unbound) and typeof(IMessage<string,string>)
-                // (closed) to the same open generic definition: IMessage<T, U>.
+                // Collapse unbound and closed generics to the open definition (IMessage<T, U>).
                 builder.Add(symbol.OriginalDefinition);
             }
         }
@@ -594,10 +593,12 @@ public class MockGenerator : IIncrementalGenerator
             ReturnType = s.ReturnType.ToDisplayString(TypeFormat),
             Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
             TypeParameterNames = s.TypeParameters.Select(tp => tp.Name).ToList(),
-            IsProtected = s.DeclaredAccessibility == Accessibility.Protected
-                       || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
+            IsProtected = IsProtectedAccess(s),
         };
     }
+
+    private static bool IsProtectedAccess(ISymbol s)
+        => s.DeclaredAccessibility is Accessibility.Protected or Accessibility.ProtectedAndInternal;
 
     private class ParameterModel
     {
@@ -625,8 +626,7 @@ public class MockGenerator : IIncrementalGenerator
             Type = s.Type.ToDisplayString(TypeFormat),
             HasGetter = !s.IsWriteOnly,
             HasSetter = !s.IsReadOnly,
-            IsProtected = s.DeclaredAccessibility == Accessibility.Protected
-                       || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
+            IsProtected = IsProtectedAccess(s),
         };
     }
 
@@ -640,8 +640,7 @@ public class MockGenerator : IIncrementalGenerator
         {
             Name = s.Name,
             HandlerType = s.Type.ToDisplayString(TypeFormat),
-            IsProtected = s.DeclaredAccessibility == Accessibility.Protected
-                       || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
+            IsProtected = IsProtectedAccess(s),
         };
     }
 }

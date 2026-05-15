@@ -128,13 +128,10 @@ public sealed class EventHandle
         _eventName = eventName;
     }
 
-    /// <summary>Invokes every subscribed handler with the given arguments.</summary>
     public void Raise(params object?[] args) => _interceptor.RaiseEvent(_eventName, args);
 
-    /// <summary>Convenience overload for the common <c>EventHandler</c>/<c>EventHandler&lt;T&gt;</c> shape.</summary>
     public void Raise(object? sender, EventArgs e) => _interceptor.RaiseEvent(_eventName, new[] { sender, e });
 
-    /// <summary>Number of handlers currently subscribed to the event.</summary>
     public int SubscriberCount => _interceptor.EventSubscriberCount(_eventName);
 }
 

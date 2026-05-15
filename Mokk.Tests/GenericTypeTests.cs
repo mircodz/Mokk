@@ -78,7 +78,6 @@ public class GenericTypeTests
     [Fact]
     public void Same_name_different_arities_coexist_in_one_assembly()
     {
-        // IMessage, IMessage<T> and IMessage<TKey,TValue> all live in this assembly.
         var plain = new MockMessage();
         var one = new MockMessage<int>();
         var two = new MockMessage<string, int>();

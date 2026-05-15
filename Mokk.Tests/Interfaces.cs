@@ -64,7 +64,6 @@ public interface IMessage<T>
     T Echo(T value);
 }
 
-// Open generic interface: registered as typeof(IMessage<,>)
 public interface IMessage<TKey, TValue>
 {
     TValue Get(TKey key);
@@ -73,14 +72,12 @@ public interface IMessage<TKey, TValue>
     event System.Action<TKey, TValue> Updated;
 }
 
-// Generic interface with constraints, registered as typeof(IBox<>)
 public interface IBox<T> where T : class, new()
 {
     T Create();
     bool Contains(T item);
 }
 
-// Open generic abstract class: registered as typeof(AbstractCache<,>)
 public abstract class AbstractCache<TKey, TValue> where TKey : notnull
 {
     public abstract TValue Load(TKey key);
