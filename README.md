@@ -42,13 +42,9 @@ using Mokk;
 ## Factory
 
 ```csharp
-var mock = new MockEmailService();   // always works
-var mock = IEmailService.Mock();     // auto-enabled when compiling with C# 14+
+var mock = new MockEmailService();
+var mock = IEmailService.Mock(); // when compiling with C# 14+
 ```
-
-`IFoo.Mock()` is generated only when the consuming project's C# language
-version is 14+ (detected automatically — no flag). `Mock(strict:, wrapping:,
-onUnusedSetup:)` forwards to the constructor.
 
 ## Matchers
 
@@ -180,8 +176,7 @@ mock.VerifyInOrder(
 
 ## VerifyInOrder across mocks
 
-A `MockSession` records calls across multiple mocks on one timeline, so order
-can be asserted across mock boundaries:
+A `MockSession` records calls across multiple mocks on one timeline, so order can be asserted across mock boundaries:
 
 ```csharp
 var session = new MockSession(auth, audit);
