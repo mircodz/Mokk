@@ -34,6 +34,8 @@ public interface IUserRepository
     int Age { get; }
     Task<string> GetUserAsync(int id);
     ValueTask<int> CountAsync();
+    Task SaveAsync();
+    ValueTask FlushAsync();
     void Delete(int id);
 
     event System.EventHandler<UserChangedEventArgs> UserChanged;
