@@ -28,13 +28,38 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     private readonly List<SetupEntry> _setups = [];
     private readonly List<(string Method, Type[]? TypeArgs, object?[] Args)> _calls = [];
     private readonly HashSet<int> _verifiedCallIndices = [];
+    private readonly Dictionary<string, Delegate?> _eventHandlers = [];
 
     public void Reset()
     {
         _setups.Clear();
         _calls.Clear();
         _verifiedCallIndices.Clear();
+        _eventHandlers.Clear();
     }
+
+    public void AddEventHandler(string eventName, Delegate? handler)
+    {
+        _eventHandlers.TryGetValue(eventName, out var existing);
+        _eventHandlers[eventName] = Delegate.Combine(existing, handler);
+    }
+
+    public void RemoveEventHandler(string eventName, Delegate? handler)
+    {
+        _eventHandlers.TryGetValue(eventName, out var existing);
+        _eventHandlers[eventName] = Delegate.Remove(existing, handler);
+    }
+
+    public void RaiseEvent(string eventName, object?[] args)
+    {
+        _eventHandlers.TryGetValue(eventName, out var handler);
+        handler?.DynamicInvoke(args);
+    }
+
+    public int EventSubscriberCount(string eventName)
+        => _eventHandlers.TryGetValue(eventName, out var handler) && handler is not null
+            ? handler.GetInvocationList().Length
+            : 0;
 
     public SetupEntry AddSetup(string methodName, Type[]? typeArgs, IMatcher[] matchers)
     {

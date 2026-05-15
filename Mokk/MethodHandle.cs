@@ -117,6 +117,27 @@ public sealed class PropertyHandle<T>
         => new(_interceptor, $"set_{_propertyName}", null, new IMatcher[] { value.Inner });
 }
 
+public sealed class EventHandle
+{
+    private readonly MockInterceptor _interceptor;
+    private readonly string _eventName;
+
+    public EventHandle(MockInterceptor interceptor, string eventName)
+    {
+        _interceptor = interceptor;
+        _eventName = eventName;
+    }
+
+    /// <summary>Invokes every subscribed handler with the given arguments.</summary>
+    public void Raise(params object?[] args) => _interceptor.RaiseEvent(_eventName, args);
+
+    /// <summary>Convenience overload for the common <c>EventHandler</c>/<c>EventHandler&lt;T&gt;</c> shape.</summary>
+    public void Raise(object? sender, EventArgs e) => _interceptor.RaiseEvent(_eventName, new[] { sender, e });
+
+    /// <summary>Number of handlers currently subscribed to the event.</summary>
+    public int SubscriberCount => _interceptor.EventSubscriberCount(_eventName);
+}
+
 public static class MethodHandleExtensions
 {
     public static MethodHandle<Task<T>> ReturnsAsync<T>(this MethodHandle<Task<T>> handle, T value)

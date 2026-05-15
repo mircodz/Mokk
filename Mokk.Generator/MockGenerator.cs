@@ -95,6 +95,7 @@ public class MockGenerator : IIncrementalGenerator
     {
         var methods = new List<MethodModel>();
         var properties = new List<PropertyModel>();
+        var events = new List<EventModel>();
         var seen = new HashSet<string>();
 
         void Process(INamedTypeSymbol iface)
@@ -122,6 +123,15 @@ public class MockGenerator : IIncrementalGenerator
 
                         break;
                     }
+                    case IEventSymbol ev:
+                    {
+                        if (seen.Add($"e:{ev.Name}"))
+                        {
+                            events.Add(EventModel.From(ev));
+                        }
+
+                        break;
+                    }
                 }
             }
         }
@@ -130,7 +140,7 @@ public class MockGenerator : IIncrementalGenerator
         foreach (var baseInterface in interfaceSymbol.AllInterfaces)
             Process(baseInterface);
 
-        return new MemberCollection(methods, properties);
+        return new MemberCollection(methods, properties, events);
     }
 
     private static void EmitVerifyInOrder(StringBuilder sb, string interceptorRef, string indent)
@@ -194,6 +204,12 @@ public class MockGenerator : IIncrementalGenerator
         foreach (var p in members.Properties)
         {
             sb.AppendLine($"    public PropertyHandle<{p.Type}> {p.Name} => new(_interceptor, \"{p.Name}\");");
+            sb.AppendLine();
+        }
+
+        foreach (var e in members.Events)
+        {
+            sb.AppendLine($"    public EventHandle {e.Name} => new(_interceptor, \"{e.Name}\");");
             sb.AppendLine();
         }
 
@@ -283,6 +299,16 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var e in members.Events)
+        {
+            sb.AppendLine($"{ii}public event {e.HandlerType} {e.Name}");
+            sb.AppendLine($"{ii}{{");
+            sb.AppendLine($"{ii}    add => _interceptor.AddEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine($"{ii}    remove => _interceptor.RemoveEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine($"{ii}}}");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"{i}}}");
     }
 
@@ -322,6 +348,7 @@ public class MockGenerator : IIncrementalGenerator
     {
         var methods = new List<MethodModel>();
         var properties = new List<PropertyModel>();
+        var events = new List<EventModel>();
         var seen = new HashSet<string>();
 
         INamedTypeSymbol? current = classSymbol;
@@ -348,12 +375,20 @@ public class MockGenerator : IIncrementalGenerator
                             properties.Add(PropertyModel.From(prop));
                         break;
                     }
+                    case IEventSymbol ev
+                        when (ev.IsAbstract || ev.IsVirtual)
+                          && ev.DeclaredAccessibility != Accessibility.Private:
+                    {
+                        if (seen.Add($"e:{ev.Name}"))
+                            events.Add(EventModel.From(ev));
+                        break;
+                    }
                 }
             }
             current = current.BaseType;
         }
 
-        return new MemberCollection(methods, properties);
+        return new MemberCollection(methods, properties, events);
     }
 
     private static void EmitAbstractClassMock(
@@ -426,6 +461,17 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var e in members.Events)
+        {
+            var access = e.IsProtected ? "protected" : "public";
+            sb.AppendLine($"    {access} override event {e.HandlerType} {e.Name}");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        add => _interceptor.AddEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine($"        remove => _interceptor.RemoveEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+        }
+
         EmitAbstractClassShortcuts(sb, "_interceptor", members, indent: "    ");
         EmitVerifyInOrder(sb, "_interceptor", indent: "    ");
         sb.AppendLine("}");
@@ -470,12 +516,20 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine($"{i}public PropertyHandle<{p.Type}> {p.Name}Handle => new({interceptorRef}, \"{p.Name}\");");
             sb.AppendLine();
         }
+
+        // Event handles use "{Name}Handle" for the same reason: the mock IS the class
+        foreach (var e in members.Events)
+        {
+            sb.AppendLine($"{i}public EventHandle {e.Name}Handle => new({interceptorRef}, \"{e.Name}\");");
+            sb.AppendLine();
+        }
     }
 
-    private class MemberCollection(List<MethodModel> methods, List<PropertyModel> properties)
+    private class MemberCollection(List<MethodModel> methods, List<PropertyModel> properties, List<EventModel> events)
     {
         public List<MethodModel> Methods { get; } = methods;
         public List<PropertyModel> Properties { get; } = properties;
+        public List<EventModel> Events { get; } = events;
     }
 
     private class MethodModel
@@ -525,6 +579,21 @@ public class MockGenerator : IIncrementalGenerator
             Type = s.Type.ToDisplayString(TypeFormat),
             HasGetter = !s.IsWriteOnly,
             HasSetter = !s.IsReadOnly,
+            IsProtected = s.DeclaredAccessibility == Accessibility.Protected
+                       || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
+        };
+    }
+
+    private class EventModel
+    {
+        public string Name { get; private set; } = "";
+        public string HandlerType { get; private set; } = "";
+        public bool IsProtected { get; private set; }
+
+        public static EventModel From(IEventSymbol s) => new()
+        {
+            Name = s.Name,
+            HandlerType = s.Type.ToDisplayString(TypeFormat),
             IsProtected = s.DeclaredAccessibility == Accessibility.Protected
                        || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
         };

@@ -16,6 +16,11 @@ public interface IEmailService
     string GetTemplate(string name, int version);
 }
 
+public class UserChangedEventArgs(int userId) : System.EventArgs
+{
+    public int UserId { get; } = userId;
+}
+
 public interface IUserRepository
 {
     string Name { get; set; }
@@ -23,6 +28,9 @@ public interface IUserRepository
     Task<string> GetUserAsync(int id);
     ValueTask<int> CountAsync();
     void Delete(int id);
+
+    event System.EventHandler<UserChangedEventArgs> UserChanged;
+    event System.Action<int, string> AuditLogged;
 }
 
 public interface IBaseService
@@ -54,4 +62,5 @@ public abstract class AbstractNotificationService
     public abstract string GetStatus(int id);
     public virtual string ServiceName => "base";
     protected abstract void Log(string entry);
+    public abstract event System.EventHandler<UserChangedEventArgs> StatusChanged;
 }

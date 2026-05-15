@@ -89,6 +89,33 @@ mock.Name.Getter().Returns("Alice");
 mock.Name.Setter(Any).Verify(Times.Once);
 ```
 
+## Events
+
+```csharp
+public interface INotifier
+{
+    event EventHandler<UserChangedEventArgs> UserChanged;
+    event Action<int, string> AuditLogged;
+}
+
+var mock = new MockNotifier();
+
+// Subscribe through the mocked instance as usual
+mock.Instance.UserChanged += (sender, e) => Console.WriteLine(e.UserId);
+
+// Raise the event from the test
+mock.UserChanged.Raise(mock.Instance, new UserChangedEventArgs(42));
+
+// Custom delegate types: positional args
+mock.AuditLogged.Raise(7, "deleted");
+
+// Inspect subscriptions
+Assert.Equal(1, mock.UserChanged.SubscriberCount);
+```
+
+On abstract-class mocks the raiser is exposed as `{EventName}Handle` (the mock *is*
+the class and can't reuse the event name), e.g. `mock.StatusChangedHandle.Raise(...)`.
+
 ## Verify
 
 ```csharp
