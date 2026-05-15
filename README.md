@@ -33,14 +33,16 @@ using Mokk;
 [assembly: GenerateMock(typeof(AbstractNotificationService))]
 ```
 
-## Factory (C# 14, opt-in)
+## Factory
 
 ```csharp
 var mock = new MockEmailService();   // always works
-var mock = IEmailService.Mock();     // with <DefineConstants>MOKK_CSHARP14</DefineConstants> + LangVersion 14
+var mock = IEmailService.Mock();     // auto-enabled when compiling with C# 14+
 ```
 
-`Mock(strict:, wrapping:, onUnusedSetup:)` forwards to the constructor.
+`IFoo.Mock()` is generated only when the consuming project's C# language
+version is 14+ (detected automatically — no flag). `Mock(strict:, wrapping:,
+onUnusedSetup:)` forwards to the constructor.
 
 ## Matchers
 

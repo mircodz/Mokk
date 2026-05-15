@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Mokk.Generator;
@@ -22,12 +23,20 @@ public class MockGenerator : IIncrementalGenerator
                 transform: static (ctx, _) => GetTargets(ctx))
             .SelectMany(static (x, _) => x);
 
-        context.RegisterSourceOutput(allTargets, static (spc, symbol) =>
+        // The C#14 `extension` factory only compiles when the *consumer's*
+        // language version is C# 14+. Detect it from parse options rather than
+        // the target framework (a net10 project can still pin LangVersion 12).
+        var supportsExtensions = context.ParseOptionsProvider.Select(static (po, _) =>
+            po is CSharpParseOptions cs
+            && (int)cs.LanguageVersion.MapSpecifiedToEffectiveVersion() >= 1400);
+
+        context.RegisterSourceOutput(allTargets.Combine(supportsExtensions), static (spc, pair) =>
         {
+            var (symbol, emitFactory) = pair;
             if (symbol.TypeKind == TypeKind.Interface)
-                Execute(spc, symbol);
+                Execute(spc, symbol, emitFactory);
             else
-                ExecuteAbstractClass(spc, symbol);
+                ExecuteAbstractClass(spc, symbol, emitFactory);
         });
     }
 
@@ -47,7 +56,7 @@ public class MockGenerator : IIncrementalGenerator
         return builder.ToImmutable();
     }
 
-    private static void Execute(SourceProductionContext context, INamedTypeSymbol interfaceSymbol)
+    private static void Execute(SourceProductionContext context, INamedTypeSymbol interfaceSymbol, bool emitFactory)
     {
         var interfaceName = interfaceSymbol.Name;
         var ns = interfaceSymbol.ContainingNamespace.IsGlobalNamespace
@@ -75,7 +84,8 @@ public class MockGenerator : IIncrementalGenerator
         }
 
         EmitMockClass(sb, mockClassName, qualifiedInterface, members, generics);
-        EmitFactoryExtension(sb, qualifiedInterface, mockClassName, generics, isInterface: true);
+        if (emitFactory)
+            EmitFactoryExtension(sb, qualifiedInterface, mockClassName, generics, isInterface: true);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
         if (generics.Arity > 0)
@@ -258,9 +268,8 @@ public class MockGenerator : IIncrementalGenerator
     }
 
     // C# 14 static extension members let `IFoo.Mock()` work without the user
-    // declaring their type partial. Gated behind a symbol so pre-C#14 toolchains
-    // (which can't parse `extension`) skip it; the conditional section is never
-    // tokenized when the symbol is undefined.
+    // declaring their type partial. Only emitted when the consumer compiles with
+    // C# 14+ (detected from parse options), so older toolchains never see it.
     private static void EmitFactoryExtension(
         StringBuilder sb, string qualifiedType, string mockClassName, GenericInfo generics, bool isInterface)
     {
@@ -271,7 +280,6 @@ public class MockGenerator : IIncrementalGenerator
         var ctorArgs = isInterface ? "strict, wrapping, onUnusedSetup" : "strict, onUnusedSetup";
 
         sb.AppendLine();
-        sb.AppendLine("#if MOKK_CSHARP14");
         sb.AppendLine("public static partial class MokkFactories");
         sb.AppendLine("{");
         sb.AppendLine($"    extension{generics.TypeParams}({qualifiedType}){generics.Constraints}");
@@ -279,7 +287,6 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine($"        public static {mockType} Mock({ctorParams}) => new({ctorArgs});");
         sb.AppendLine("    }");
         sb.AppendLine("}");
-        sb.AppendLine("#endif");
     }
 
     private static void EmitMockClass(
@@ -410,7 +417,7 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine($"{i}}}");
     }
 
-    private static void ExecuteAbstractClass(SourceProductionContext context, INamedTypeSymbol classSymbol)
+    private static void ExecuteAbstractClass(SourceProductionContext context, INamedTypeSymbol classSymbol, bool emitFactory)
     {
         var className = classSymbol.Name;
         var ns = classSymbol.ContainingNamespace.IsGlobalNamespace
@@ -438,7 +445,8 @@ public class MockGenerator : IIncrementalGenerator
         }
 
         EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members, generics);
-        EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false);
+        if (emitFactory)
+            EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
         if (generics.Arity > 0)
