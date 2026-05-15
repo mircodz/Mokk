@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Mokk.Generator;
@@ -22,12 +23,20 @@ public class MockGenerator : IIncrementalGenerator
                 transform: static (ctx, _) => GetTargets(ctx))
             .SelectMany(static (x, _) => x);
 
-        context.RegisterSourceOutput(allTargets, static (spc, symbol) =>
+        // The C#14 `extension` factory only compiles when the *consumer's*
+        // language version is C# 14+. Detect it from parse options rather than
+        // the target framework (a net10 project can still pin LangVersion 12).
+        var supportsExtensions = context.ParseOptionsProvider.Select(static (po, _) =>
+            po is CSharpParseOptions cs
+            && (int)cs.LanguageVersion.MapSpecifiedToEffectiveVersion() >= 1400);
+
+        context.RegisterSourceOutput(allTargets.Combine(supportsExtensions), static (spc, pair) =>
         {
+            var (symbol, emitFactory) = pair;
             if (symbol.TypeKind == TypeKind.Interface)
-                Execute(spc, symbol);
+                Execute(spc, symbol, emitFactory);
             else
-                ExecuteAbstractClass(spc, symbol);
+                ExecuteAbstractClass(spc, symbol, emitFactory);
         });
     }
 
@@ -40,13 +49,14 @@ public class MockGenerator : IIncrementalGenerator
                 && attr.ConstructorArguments[0].Value is INamedTypeSymbol symbol
                 && (symbol.TypeKind == TypeKind.Interface || (symbol.TypeKind == TypeKind.Class && symbol.IsAbstract)))
             {
-                builder.Add(symbol);
+                // Collapse unbound and closed generics to the open definition (IMessage<T, U>).
+                builder.Add(symbol.OriginalDefinition);
             }
         }
         return builder.ToImmutable();
     }
 
-    private static void Execute(SourceProductionContext context, INamedTypeSymbol interfaceSymbol)
+    private static void Execute(SourceProductionContext context, INamedTypeSymbol interfaceSymbol, bool emitFactory)
     {
         var interfaceName = interfaceSymbol.Name;
         var ns = interfaceSymbol.ContainingNamespace.IsGlobalNamespace
@@ -54,6 +64,7 @@ public class MockGenerator : IIncrementalGenerator
             : interfaceSymbol.ContainingNamespace.ToDisplayString();
 
         var mockClassName = GetMockClassName(interfaceName);
+        var generics = GetGenericInfo(interfaceSymbol);
         var qualifiedInterface = interfaceSymbol.ToDisplayString(TypeFormat);
         var members = CollectMembers(interfaceSymbol);
 
@@ -72,9 +83,13 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitMockClass(sb, mockClassName, qualifiedInterface, members);
+        EmitMockClass(sb, mockClassName, qualifiedInterface, members, generics);
+        if (emitFactory)
+            EmitFactoryExtension(sb, qualifiedInterface, mockClassName, generics, isInterface: true);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
+        if (generics.Arity > 0)
+            fileName += $"_{generics.Arity}";
         context.AddSource($"{fileName}.g.cs", sb.ToString());
     }
 
@@ -91,10 +106,49 @@ public class MockGenerator : IIncrementalGenerator
         return $"Mock{baseName}";
     }
 
+    private readonly struct GenericInfo(string typeParams, string constraints, int arity)
+    {
+        public string TypeParams { get; } = typeParams;   // "<T, U>" or ""
+        public string Constraints { get; } = constraints;  // " where T : class ..." or ""
+        public int Arity { get; } = arity;
+    }
+
+    private static GenericInfo GetGenericInfo(INamedTypeSymbol symbol)
+    {
+        var tps = symbol.TypeParameters;
+        if (tps.Length == 0)
+            return new GenericInfo("", "", 0);
+
+        var typeParams = $"<{string.Join(", ", tps.Select(tp => tp.Name))}>";
+
+        var clauses = new StringBuilder();
+        foreach (var tp in tps)
+        {
+            var parts = new List<string>();
+
+            if (tp.HasReferenceTypeConstraint) parts.Add("class");
+            else if (tp.HasUnmanagedTypeConstraint) parts.Add("unmanaged");
+            else if (tp.HasValueTypeConstraint) parts.Add("struct");
+            else if (tp.HasNotNullConstraint) parts.Add("notnull");
+
+            foreach (var ct in tp.ConstraintTypes)
+                parts.Add(ct.ToDisplayString(TypeFormat));
+
+            if (tp.HasConstructorConstraint && !tp.HasValueTypeConstraint && !tp.HasUnmanagedTypeConstraint)
+                parts.Add("new()");
+
+            if (parts.Count > 0)
+                clauses.Append($" where {tp.Name} : {string.Join(", ", parts)}");
+        }
+
+        return new GenericInfo(typeParams, clauses.ToString(), tps.Length);
+    }
+
     private static MemberCollection CollectMembers(INamedTypeSymbol interfaceSymbol)
     {
         var methods = new List<MethodModel>();
         var properties = new List<PropertyModel>();
+        var events = new List<EventModel>();
         var seen = new HashSet<string>();
 
         void Process(INamedTypeSymbol iface)
@@ -122,6 +176,15 @@ public class MockGenerator : IIncrementalGenerator
 
                         break;
                     }
+                    case IEventSymbol ev:
+                    {
+                        if (seen.Add($"e:{ev.Name}"))
+                        {
+                            events.Add(EventModel.From(ev));
+                        }
+
+                        break;
+                    }
                 }
             }
         }
@@ -130,7 +193,7 @@ public class MockGenerator : IIncrementalGenerator
         foreach (var baseInterface in interfaceSymbol.AllInterfaces)
             Process(baseInterface);
 
-        return new MemberCollection(methods, properties);
+        return new MemberCollection(methods, properties, events);
     }
 
     private static void EmitVerifyInOrder(StringBuilder sb, string interceptorRef, string indent)
@@ -145,14 +208,96 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine($"{i}}}");
     }
 
-    private static void EmitMockClass(
-        StringBuilder sb, string className, string qualifiedInterface, MemberCollection members)
+    // Setup-handle parameters: out params are produced by the mock, not matched,
+    // so they're dropped from the handle signature and treated as wildcards.
+    private static string HandleMatcherParams(MethodModel m)
+        => string.Join(", ", m.Parameters.Where(p => !p.IsOut).Select(p => $"Matcher<{p.Type}> {p.Name}"));
+
+    private static string HandleMatchersExpr(MethodModel m)
+        => m.Parameters.Count == 0
+            ? "Array.Empty<IMatcher>()"
+            : $"new IMatcher[] {{ {string.Join(", ", m.Parameters.Select(p => p.IsOut ? $"Matcher<{p.Type}>.Any.Inner" : $"{p.Name}.Inner"))} }}";
+
+    private static string TypeArgsExpr(MethodModel m)
+        => m.TypeParameterNames.Count > 0
+            ? $"new System.Type[] {{ {string.Join(", ", m.TypeParameterNames.Select(tp => $"typeof({tp})"))} }}"
+            : "null";
+
+    private static string TypeParamList(MethodModel m)
+        => m.TypeParameterNames.Count > 0 ? $"<{string.Join(", ", m.TypeParameterNames)}>" : "";
+
+    // Emits a method that forwards to the interceptor. ref/out parameters require a
+    // statement body so their values can be copied back from the (possibly mutated)
+    // args array after the call.
+    private static void EmitInterceptedMethod(StringBuilder sb, string indent, string prefix, MethodModel m)
     {
-        sb.AppendLine($"public sealed class {className}");
+        var typeParams = TypeParamList(m);
+        var typeArgs = TypeArgsExpr(m);
+        var sig = string.Join(", ", m.Parameters.Select(p => $"{p.Modifier}{p.Type} {p.Name}"));
+        var argsLiteral = m.Parameters.Count > 0
+            ? $"new object?[] {{ {string.Join(", ", m.Parameters.Select(p => p.IsOut ? $"default({p.Type})" : p.Name))} }}"
+            : "Array.Empty<object?>()";
+        var ret = m.IsVoid ? "void" : m.ReturnType;
+
+        if (!m.Parameters.Any(p => p.WritesBack))
+        {
+            sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig})");
+            sb.AppendLine(m.IsVoid
+                ? $"{indent}    => _interceptor.InterceptVoid(\"{m.Name}\", {typeArgs}, {argsLiteral});"
+                : $"{indent}    => _interceptor.Intercept<{m.ReturnType}>(\"{m.Name}\", {typeArgs}, {argsLiteral});");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig})");
+        sb.AppendLine($"{indent}{{");
+        sb.AppendLine($"{indent}    var __args = {argsLiteral};");
+        sb.AppendLine(m.IsVoid
+            ? $"{indent}    _interceptor.InterceptVoid(\"{m.Name}\", {typeArgs}, __args);"
+            : $"{indent}    var __ret = _interceptor.Intercept<{m.ReturnType}>(\"{m.Name}\", {typeArgs}, __args);");
+        for (int idx = 0; idx < m.Parameters.Count; idx++)
+        {
+            var p = m.Parameters[idx];
+            if (p.WritesBack)
+                sb.AppendLine($"{indent}    {p.Name} = ({p.Type})__args[{idx}]!;");
+        }
+        if (!m.IsVoid)
+            sb.AppendLine($"{indent}    return __ret;");
+        sb.AppendLine($"{indent}}}");
+        sb.AppendLine();
+    }
+
+    // C# 14 static extension members let `IFoo.Mock()` work without the user
+    // declaring their type partial. Only emitted when the consumer compiles with
+    // C# 14+ (detected from parse options), so older toolchains never see it.
+    private static void EmitFactoryExtension(
+        StringBuilder sb, string qualifiedType, string mockClassName, GenericInfo generics, bool isInterface)
+    {
+        var mockType = $"{mockClassName}{generics.TypeParams}";
+        var ctorParams = isInterface
+            ? $"bool strict = false, {qualifiedType}? wrapping = null, System.Action<string>? onUnusedSetup = null"
+            : "bool strict = false, System.Action<string>? onUnusedSetup = null";
+        var ctorArgs = isInterface ? "strict, wrapping, onUnusedSetup" : "strict, onUnusedSetup";
+
+        sb.AppendLine();
+        sb.AppendLine("public static partial class MokkFactories");
+        sb.AppendLine("{");
+        sb.AppendLine($"    extension{generics.TypeParams}({qualifiedType}){generics.Constraints}");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        public static {mockType} Mock({ctorParams}) => new({ctorArgs});");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+    }
+
+    private static void EmitMockClass(
+        StringBuilder sb, string className, string qualifiedInterface, MemberCollection members, GenericInfo generics)
+    {
+        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine($"    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    private readonly __Instance _inner;");
         sb.AppendLine($"    public {qualifiedInterface} Instance => _inner;");
+        sb.AppendLine($"    global::Mokk.MockInterceptor global::Mokk.IMockObject.Interceptor => _interceptor;");
         sb.AppendLine();
         sb.AppendLine($"    public {className}(bool strict = false, {qualifiedInterface}? wrapping = null, System.Action<string>? onUnusedSetup = null)");
         sb.AppendLine($"    {{");
@@ -167,16 +312,10 @@ public class MockGenerator : IIncrementalGenerator
 
         foreach (var m in members.Methods)
         {
-            var typeParams = m.TypeParameterNames.Count > 0
-                ? $"<{string.Join(", ", m.TypeParameterNames)}>"
-                : "";
-            var matcherParms = string.Join(", ", m.Parameters.Select(p => $"Matcher<{p.Type}> {p.Name}"));
-            var typeArgsExpr = m.TypeParameterNames.Count > 0
-                ? $"new System.Type[] {{ {string.Join(", ", m.TypeParameterNames.Select(tp => $"typeof({tp})"))} }}"
-                : "null";
-            var matchersExpr = m.Parameters.Count > 0
-                ? $"new IMatcher[] {{ {string.Join(", ", m.Parameters.Select(p => $"{p.Name}.Inner"))} }}"
-                : "Array.Empty<IMatcher>()";
+            var typeParams = TypeParamList(m);
+            var matcherParms = HandleMatcherParams(m);
+            var typeArgsExpr = TypeArgsExpr(m);
+            var matchersExpr = HandleMatchersExpr(m);
 
             if (m.IsVoid)
             {
@@ -194,6 +333,12 @@ public class MockGenerator : IIncrementalGenerator
         foreach (var p in members.Properties)
         {
             sb.AppendLine($"    public PropertyHandle<{p.Type}> {p.Name} => new(_interceptor, \"{p.Name}\");");
+            sb.AppendLine();
+        }
+
+        foreach (var e in members.Events)
+        {
+            sb.AppendLine($"    public EventHandle {e.Name} => new(_interceptor, \"{e.Name}\");");
             sb.AppendLine();
         }
 
@@ -241,30 +386,7 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine();
 
         foreach (var m in members.Methods)
-        {
-            var typeParams = m.TypeParameterNames.Count > 0
-                ? $"<{string.Join(", ", m.TypeParameterNames)}>"
-                : "";
-            var parms = string.Join(", ", m.Parameters.Select(p => $"{p.Type} {p.Name}"));
-            var typeArgsExpr = m.TypeParameterNames.Count > 0
-                ? $"new System.Type[] {{ {string.Join(", ", m.TypeParameterNames.Select(tp => $"typeof({tp})"))} }}"
-                : "null";
-            var args = m.Parameters.Count > 0
-                ? $"new object?[] {{ {string.Join(", ", m.Parameters.Select(p => p.Name))} }}"
-                : "Array.Empty<object?>()";
-
-            if (m.IsVoid)
-            {
-                sb.AppendLine($"{ii}public void {m.Name}{typeParams}({parms})");
-                sb.AppendLine($"{ii}    => _interceptor.InterceptVoid(\"{m.Name}\", {typeArgsExpr}, {args});");
-            }
-            else
-            {
-                sb.AppendLine($"{ii}public {m.ReturnType} {m.Name}{typeParams}({parms})");
-                sb.AppendLine($"{ii}    => _interceptor.Intercept<{m.ReturnType}>(\"{m.Name}\", {typeArgsExpr}, {args});");
-            }
-            sb.AppendLine();
-        }
+            EmitInterceptedMethod(sb, ii, "public", m);
 
         foreach (var p in members.Properties)
         {
@@ -283,10 +405,20 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var e in members.Events)
+        {
+            sb.AppendLine($"{ii}public event {e.HandlerType} {e.Name}");
+            sb.AppendLine($"{ii}{{");
+            sb.AppendLine($"{ii}    add => _interceptor.AddEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine($"{ii}    remove => _interceptor.RemoveEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine($"{ii}}}");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"{i}}}");
     }
 
-    private static void ExecuteAbstractClass(SourceProductionContext context, INamedTypeSymbol classSymbol)
+    private static void ExecuteAbstractClass(SourceProductionContext context, INamedTypeSymbol classSymbol, bool emitFactory)
     {
         var className = classSymbol.Name;
         var ns = classSymbol.ContainingNamespace.IsGlobalNamespace
@@ -294,6 +426,7 @@ public class MockGenerator : IIncrementalGenerator
             : classSymbol.ContainingNamespace.ToDisplayString();
 
         var mockClassName = GetMockClassName(className);
+        var generics = GetGenericInfo(classSymbol);
         var qualifiedClass = classSymbol.ToDisplayString(TypeFormat);
         var members = CollectAbstractClassMembers(classSymbol);
 
@@ -312,9 +445,13 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members);
+        EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members, generics);
+        if (emitFactory)
+            EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
+        if (generics.Arity > 0)
+            fileName += $"_{generics.Arity}";
         context.AddSource($"{fileName}.g.cs", sb.ToString());
     }
 
@@ -322,6 +459,7 @@ public class MockGenerator : IIncrementalGenerator
     {
         var methods = new List<MethodModel>();
         var properties = new List<PropertyModel>();
+        var events = new List<EventModel>();
         var seen = new HashSet<string>();
 
         INamedTypeSymbol? current = classSymbol;
@@ -348,21 +486,30 @@ public class MockGenerator : IIncrementalGenerator
                             properties.Add(PropertyModel.From(prop));
                         break;
                     }
+                    case IEventSymbol ev
+                        when (ev.IsAbstract || ev.IsVirtual)
+                          && ev.DeclaredAccessibility != Accessibility.Private:
+                    {
+                        if (seen.Add($"e:{ev.Name}"))
+                            events.Add(EventModel.From(ev));
+                        break;
+                    }
                 }
             }
             current = current.BaseType;
         }
 
-        return new MemberCollection(methods, properties);
+        return new MemberCollection(methods, properties, events);
     }
 
     private static void EmitAbstractClassMock(
-        StringBuilder sb, string className, string qualifiedClass, MemberCollection members)
+        StringBuilder sb, string className, string qualifiedClass, MemberCollection members, GenericInfo generics)
     {
-        sb.AppendLine($"public sealed class {className} : {qualifiedClass}");
+        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : {qualifiedClass}, global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    public {qualifiedClass} Instance => this;");
+        sb.AppendLine($"    global::Mokk.MockInterceptor global::Mokk.IMockObject.Interceptor => _interceptor;");
         sb.AppendLine();
         sb.AppendLine($"    public {className}(bool strict = false, System.Action<string>? onUnusedSetup = null) : base()");
         sb.AppendLine($"        => _interceptor = new(strict, null, typeof({qualifiedClass}), onUnusedSetup);");
@@ -373,31 +520,7 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine();
 
         foreach (var m in members.Methods)
-        {
-            var typeParams = m.TypeParameterNames.Count > 0
-                ? $"<{string.Join(", ", m.TypeParameterNames)}>"
-                : "";
-            var parms = string.Join(", ", m.Parameters.Select(p => $"{p.Type} {p.Name}"));
-            var typeArgsExpr = m.TypeParameterNames.Count > 0
-                ? $"new System.Type[] {{ {string.Join(", ", m.TypeParameterNames.Select(tp => $"typeof({tp})"))} }}"
-                : "null";
-            var args = m.Parameters.Count > 0
-                ? $"new object?[] {{ {string.Join(", ", m.Parameters.Select(p => p.Name))} }}"
-                : "Array.Empty<object?>()";
-            var access = m.IsProtected ? "protected" : "public";
-
-            if (m.IsVoid)
-            {
-                sb.AppendLine($"    {access} override void {m.Name}{typeParams}({parms})");
-                sb.AppendLine($"        => _interceptor.InterceptVoid(\"{m.Name}\", {typeArgsExpr}, {args});");
-            }
-            else
-            {
-                sb.AppendLine($"    {access} override {m.ReturnType} {m.Name}{typeParams}({parms})");
-                sb.AppendLine($"        => _interceptor.Intercept<{m.ReturnType}>(\"{m.Name}\", {typeArgsExpr}, {args});");
-            }
-            sb.AppendLine();
-        }
+            EmitInterceptedMethod(sb, "    ", $"{(m.IsProtected ? "protected" : "public")} override", m);
 
         var settableProps = members.Properties.Where(p => p.HasSetter).ToList();
         foreach (var p in settableProps)
@@ -426,6 +549,17 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var e in members.Events)
+        {
+            var access = e.IsProtected ? "protected" : "public";
+            sb.AppendLine($"    {access} override event {e.HandlerType} {e.Name}");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        add => _interceptor.AddEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine($"        remove => _interceptor.RemoveEventHandler(\"{e.Name}\", value);");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+        }
+
         EmitAbstractClassShortcuts(sb, "_interceptor", members, indent: "    ");
         EmitVerifyInOrder(sb, "_interceptor", indent: "    ");
         sb.AppendLine("}");
@@ -442,14 +576,10 @@ public class MockGenerator : IIncrementalGenerator
             if (m.Parameters.Count == 0)
                 continue;
 
-            var typeParams = m.TypeParameterNames.Count > 0
-                ? $"<{string.Join(", ", m.TypeParameterNames)}>"
-                : "";
-            var matcherParms = string.Join(", ", m.Parameters.Select(p => $"Matcher<{p.Type}> {p.Name}"));
-            var typeArgsExpr = m.TypeParameterNames.Count > 0
-                ? $"new System.Type[] {{ {string.Join(", ", m.TypeParameterNames.Select(tp => $"typeof({tp})"))} }}"
-                : "null";
-            var matchersExpr = $"new IMatcher[] {{ {string.Join(", ", m.Parameters.Select(p => $"{p.Name}.Inner"))} }}";
+            var typeParams = TypeParamList(m);
+            var matcherParms = HandleMatcherParams(m);
+            var typeArgsExpr = TypeArgsExpr(m);
+            var matchersExpr = HandleMatchersExpr(m);
 
             if (m.IsVoid)
             {
@@ -470,12 +600,20 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine($"{i}public PropertyHandle<{p.Type}> {p.Name}Handle => new({interceptorRef}, \"{p.Name}\");");
             sb.AppendLine();
         }
+
+        // Event handles use "{Name}Handle" for the same reason: the mock IS the class
+        foreach (var e in members.Events)
+        {
+            sb.AppendLine($"{i}public EventHandle {e.Name}Handle => new({interceptorRef}, \"{e.Name}\");");
+            sb.AppendLine();
+        }
     }
 
-    private class MemberCollection(List<MethodModel> methods, List<PropertyModel> properties)
+    private class MemberCollection(List<MethodModel> methods, List<PropertyModel> properties, List<EventModel> events)
     {
         public List<MethodModel> Methods { get; } = methods;
         public List<PropertyModel> Properties { get; } = properties;
+        public List<EventModel> Events { get; } = events;
     }
 
     private class MethodModel
@@ -494,21 +632,40 @@ public class MockGenerator : IIncrementalGenerator
             ReturnType = s.ReturnType.ToDisplayString(TypeFormat),
             Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
             TypeParameterNames = s.TypeParameters.Select(tp => tp.Name).ToList(),
-            IsProtected = s.DeclaredAccessibility == Accessibility.Protected
-                       || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
+            IsProtected = IsProtectedAccess(s),
         };
     }
+
+    private static bool IsProtectedAccess(ISymbol s)
+        => s.DeclaredAccessibility is Accessibility.Protected or Accessibility.ProtectedAndInternal;
 
     private class ParameterModel
     {
         public string Name { get; private set; } = "";
         public string Type { get; private set; } = "";
+        public string Modifier { get; private set; } = "";  // "", "ref ", "out ", "in ", "ref readonly "
+        public bool IsOut { get; private set; }
+        public bool WritesBack { get; private set; }         // out or ref: value must be copied back
 
-        public static ParameterModel From(IParameterSymbol s) => new()
+        public static ParameterModel From(IParameterSymbol s)
         {
-            Name = s.Name,
-            Type = s.Type.ToDisplayString(TypeFormat),
-        };
+            var (modifier, isOut, writesBack) = s.RefKind switch
+            {
+                RefKind.Out => ("out ", true, true),
+                RefKind.Ref => ("ref ", false, true),
+                RefKind.In => ("in ", false, false),
+                RefKind.RefReadOnlyParameter => ("ref readonly ", false, false),
+                _ => ("", false, false),
+            };
+            return new()
+            {
+                Name = s.Name,
+                Type = s.Type.ToDisplayString(TypeFormat),
+                Modifier = modifier,
+                IsOut = isOut,
+                WritesBack = writesBack,
+            };
+        }
     }
 
     private class PropertyModel
@@ -525,8 +682,21 @@ public class MockGenerator : IIncrementalGenerator
             Type = s.Type.ToDisplayString(TypeFormat),
             HasGetter = !s.IsWriteOnly,
             HasSetter = !s.IsReadOnly,
-            IsProtected = s.DeclaredAccessibility == Accessibility.Protected
-                       || s.DeclaredAccessibility == Accessibility.ProtectedAndInternal,
+            IsProtected = IsProtectedAccess(s),
+        };
+    }
+
+    private class EventModel
+    {
+        public string Name { get; private set; } = "";
+        public string HandlerType { get; private set; } = "";
+        public bool IsProtected { get; private set; }
+
+        public static EventModel From(IEventSymbol s) => new()
+        {
+            Name = s.Name,
+            HandlerType = s.Type.ToDisplayString(TypeFormat),
+            IsProtected = IsProtectedAccess(s),
         };
     }
 }

@@ -10,6 +10,7 @@ public interface ICallSpec
     string Method { get; }
     Type[]? TypeArgs { get; }
     IMatcher[] Matchers { get; }
+    MockInterceptor Owner { get; }
 }
 
 public sealed class MethodHandle<TReturn> : ICallSpec
@@ -31,6 +32,7 @@ public sealed class MethodHandle<TReturn> : ICallSpec
     string ICallSpec.Method => _method;
     Type[]? ICallSpec.TypeArgs => _typeArgs;
     IMatcher[] ICallSpec.Matchers => _matchers;
+    MockInterceptor ICallSpec.Owner => _interceptor;
 
     private SetupEntry Entry => _entry ??= _interceptor.AddSetup(_method, _typeArgs, _matchers);
 
@@ -83,6 +85,7 @@ public sealed class VoidMethodHandle : ICallSpec
     string ICallSpec.Method => _method;
     Type[]? ICallSpec.TypeArgs => _typeArgs;
     IMatcher[] ICallSpec.Matchers => _matchers;
+    MockInterceptor ICallSpec.Owner => _interceptor;
 
     private SetupEntry Entry => _entry ??= _interceptor.AddSetup(_method, _typeArgs, _matchers);
 
@@ -117,6 +120,33 @@ public sealed class PropertyHandle<T>
         => new(_interceptor, $"set_{_propertyName}", null, new IMatcher[] { value.Inner });
 }
 
+public sealed class EventHandle
+{
+    private readonly MockInterceptor _interceptor;
+    private readonly string _eventName;
+
+    public EventHandle(MockInterceptor interceptor, string eventName)
+    {
+        _interceptor = interceptor;
+        _eventName = eventName;
+    }
+
+    public void Raise(params object?[] args) => _interceptor.RaiseEvent(_eventName, args);
+
+    public void Raise(object? sender, EventArgs e) => _interceptor.RaiseEvent(_eventName, new[] { sender, e });
+
+    public int SubscriberCount => _interceptor.EventSubscriberCount(_eventName);
+
+    public void Subscribed(Times times) => _interceptor.VerifyEventSubscribed(_eventName, null, times);
+    public void Subscribed(Delegate handler, Times times) => _interceptor.VerifyEventSubscribed(_eventName, handler, times);
+
+    public void Unsubscribed(Times times) => _interceptor.VerifyEventUnsubscribed(_eventName, null, times);
+    public void Unsubscribed(Delegate handler, Times times) => _interceptor.VerifyEventUnsubscribed(_eventName, handler, times);
+
+    public void HandlerInvoked(Times times) => _interceptor.VerifyEventHandlerInvoked(_eventName, null, times);
+    public void HandlerInvoked(Delegate handler, Times times) => _interceptor.VerifyEventHandlerInvoked(_eventName, handler, times);
+}
+
 public static class MethodHandleExtensions
 {
     public static MethodHandle<Task<T>> ReturnsAsync<T>(this MethodHandle<Task<T>> handle, T value)
@@ -124,4 +154,32 @@ public static class MethodHandleExtensions
 
     public static MethodHandle<ValueTask<T>> ReturnsAsync<T>(this MethodHandle<ValueTask<T>> handle, T value)
         => handle.Returns(new ValueTask<T>(value));
+
+    public static MethodHandle<Task<T>> ReturnsAsync<T>(this MethodHandle<Task<T>> handle, Func<T> factory)
+        => handle.Returns(() => Task.FromResult(factory()));
+
+    public static MethodHandle<ValueTask<T>> ReturnsAsync<T>(this MethodHandle<ValueTask<T>> handle, Func<T> factory)
+        => handle.Returns(() => new ValueTask<T>(factory()));
+
+    // Faulted-task semantics: the method returns a failed Task rather than
+    // throwing synchronously, so `await` (not the call) observes the exception.
+    public static void ThrowsAsync(this MethodHandle<Task> handle, Exception ex)
+        => handle.Returns(Task.FromException(ex));
+
+    public static void ThrowsAsync<T>(this MethodHandle<Task<T>> handle, Exception ex)
+        => handle.Returns(Task.FromException<T>(ex));
+
+    public static void ThrowsAsync(this MethodHandle<ValueTask> handle, Exception ex)
+        => handle.Returns(new ValueTask(Task.FromException(ex)));
+
+    public static void ThrowsAsync<T>(this MethodHandle<ValueTask<T>> handle, Exception ex)
+        => handle.Returns(new ValueTask<T>(Task.FromException<T>(ex)));
+
+    public static void ThrowsAsync<TException>(this MethodHandle<Task> handle)
+        where TException : Exception, new()
+        => handle.Returns(Task.FromException(new TException()));
+
+    public static void ThrowsAsync<TException>(this MethodHandle<ValueTask> handle)
+        where TException : Exception, new()
+        => handle.Returns(new ValueTask(Task.FromException(new TException())));
 }

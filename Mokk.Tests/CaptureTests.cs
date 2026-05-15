@@ -1,10 +1,10 @@
 using Xunit;
-using static Mokk.Wildcard;
 using static Mokk.Capture;
+using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-public class CaptureSlotTests
+public class CaptureTests
 {
     [Fact]
     public void Captures_argument_on_match()
@@ -48,19 +48,16 @@ public class CaptureSlotTests
     {
         var slot = Slot<string>();
         var mock = new MockEmailService();
-        // First setup captures but only matches specific subject
         mock.Send(Into(slot), "specific").Returns(true);
-        // Second setup is the one that actually wins
-        mock.Send(Any, Any).Returns(false);
+        mock.Send(Any, Any).Returns(false); // this is the setup that wins
 
         mock.Instance.Send("hello@test.com", "other");
 
-        // Slot should not have been captured - the capturing setup didn't win
         Assert.False(slot.HasValue);
     }
 
     [Fact]
-    public void Can_capture_int_argument()
+    public void Can_capture_value_type_argument()
     {
         var slot = Slot<int>();
         var mock = new MockEmailService();

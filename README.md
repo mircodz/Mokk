@@ -1,5 +1,11 @@
 # Mokk
 
+<div align="center">
+    <img src="https://count.getloli.com/get/@mircodz-mokk?theme=asoul&padding=3" /><br>
+</div>
+
+## Introduction
+
 C# mocking library powered by Roslyn source generators.
 
 ## Installation
@@ -31,6 +37,13 @@ using Mokk;
 [assembly: GenerateMock(typeof(IEmailService))]
 [assembly: GenerateMock(typeof(IUserRepository))]
 [assembly: GenerateMock(typeof(AbstractNotificationService))]
+```
+
+## Factory
+
+```csharp
+var mock = new MockEmailService();
+var mock = IEmailService.Mock(); // when compiling with C# 14+
 ```
 
 ## Matchers
@@ -70,12 +83,43 @@ mock.GetTemplate(Any, Any).Sequence()
     .Throws(new Exception("exhausted"));
 ```
 
+## Async
+
+```csharp
+mock.GetUserAsync(Any).ReturnsAsync("Alice");
+mock.GetUserAsync(Any).ReturnsAsync(() => Compute());
+mock.GetUserAsync(Any).ThrowsAsync(new IOException()); // faulted task, not a sync throw
+
+mock.GetUserAsync(Any).Sequence()
+    .ReturnsAsync("first")
+    .ThrowsAsync(new Exception("exhausted"));
+```
+
+## ref / out / in
+
+```csharp
+// out values are set from a callback; out params drop out of the setup signature
+mock.TryParse("42").Callback(args => args[1] = 42).Returns(true);
+mock.Instance.TryParse("42", out int value); // value == 42
+
+mock.Increment(Any).Callback(args => args[0] = (int)args[0]! + 1);
+```
+
 ## Generic methods
 
 ```csharp
 mock.DoSomething<int>(Any).Returns(42);
 mock.DoSomething<string>(Any).Returns("hello");
 mock.DoSomething<AnyType>(Any).Callback(() => count++); // matches any T
+```
+
+## Generic types
+
+```csharp
+[assembly: GenerateMock(typeof(IMessage<,>))] // closed types collapse to this too
+
+var mock = new MockMessage<string, int>();
+mock.Get("answer").Returns(42);
 ```
 
 ## Properties
@@ -88,6 +132,22 @@ Assert.Equal("Alice", mock.Instance.Name);
 mock.Name.Getter().Returns("Alice");
 mock.Name.Setter(Any).Verify(Times.Once);
 ```
+
+## Events
+
+```csharp
+mock.Instance.UserChanged += (sender, e) => ...;
+
+mock.UserChanged.Raise(mock.Instance, new UserChangedEventArgs(42));
+mock.AuditLogged.Raise(7, "deleted"); // custom delegate: positional args
+Assert.Equal(1, mock.UserChanged.SubscriberCount);
+
+mock.UserChanged.Subscribed(handler, Times.Once);
+mock.UserChanged.Unsubscribed(Times.Never);
+mock.UserChanged.HandlerInvoked(handler, Times.Exactly(2));
+```
+
+Abstract-class mocks expose the raiser as `{EventName}Handle`.
 
 ## Verify
 
@@ -111,6 +171,22 @@ mock.VerifyInOrder(
     mock.Login(Any),
     mock.GetUser(Any),
     mock.Logout()
+);
+```
+
+## VerifyInOrder across mocks
+
+A `MockSession` records calls across multiple mocks on one timeline, so order can be asserted across mock boundaries:
+
+```csharp
+var session = new MockSession(auth, audit);
+
+sut.Run();
+
+session.VerifyInOrder(
+    auth.Login(Any),
+    audit.Write(Any),
+    auth.Logout()
 );
 ```
 
