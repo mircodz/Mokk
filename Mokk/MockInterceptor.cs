@@ -25,7 +25,13 @@ public class SetupEntry(string methodName, Type[]? typeArgs, IMatcher[] matchers
 
 public class MockInterceptor(bool strict = false, object? wrapping = null, Type? wrappingType = null, Action<string>? onUnusedSetup = null)
 {
-    private MockSession? _session;
+    // Guards all mutable state below so a SUT may exercise the mock from
+    // multiple threads concurrently. User delegates (Callback/Returns/event
+    // handlers) are invoked outside the lock to avoid holding it across
+    // arbitrary user code.
+    private readonly object _gate = new();
+
+    private volatile MockSession? _session;
     internal void UseSession(MockSession session) => _session = session;
 
     private readonly List<SetupEntry> _setups = [];
@@ -38,61 +44,87 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
 
     public void Reset()
     {
-        _setups.Clear();
-        _calls.Clear();
-        _verifiedCallIndices.Clear();
-        _eventHandlers.Clear();
-        _eventSubscribes.Clear();
-        _eventUnsubscribes.Clear();
-        _eventInvocations.Clear();
+        lock (_gate)
+        {
+            _setups.Clear();
+            _calls.Clear();
+            _verifiedCallIndices.Clear();
+            _eventHandlers.Clear();
+            _eventSubscribes.Clear();
+            _eventUnsubscribes.Clear();
+            _eventInvocations.Clear();
+        }
     }
 
     public void AddEventHandler(string eventName, Delegate? handler)
     {
-        _eventSubscribes.Add((eventName, handler));
-        _eventHandlers.TryGetValue(eventName, out var existing);
-        _eventHandlers[eventName] = Delegate.Combine(existing, handler);
+        lock (_gate)
+        {
+            _eventSubscribes.Add((eventName, handler));
+            _eventHandlers.TryGetValue(eventName, out var existing);
+            _eventHandlers[eventName] = Delegate.Combine(existing, handler);
+        }
     }
 
     public void RemoveEventHandler(string eventName, Delegate? handler)
     {
-        _eventUnsubscribes.Add((eventName, handler));
-        _eventHandlers.TryGetValue(eventName, out var existing);
-        _eventHandlers[eventName] = Delegate.Remove(existing, handler);
+        lock (_gate)
+        {
+            _eventUnsubscribes.Add((eventName, handler));
+            _eventHandlers.TryGetValue(eventName, out var existing);
+            _eventHandlers[eventName] = Delegate.Remove(existing, handler);
+        }
     }
 
     public void RaiseEvent(string eventName, object?[] args)
     {
-        _eventHandlers.TryGetValue(eventName, out var handler);
-        if (handler is null)
-            return;
-
-        // Invoke each subscriber individually, in subscription order, so
-        // per-handler invocation counts can be tracked.
-        foreach (var d in handler.GetInvocationList())
+        Delegate[] subscribers;
+        lock (_gate)
         {
-            _eventInvocations.Add((eventName, d));
-            d.DynamicInvoke(args);
+            _eventHandlers.TryGetValue(eventName, out var handler);
+            if (handler is null)
+                return;
+
+            // Snapshot + record invocations in subscription order under the
+            // lock; invoke the handlers outside it.
+            subscribers = handler.GetInvocationList();
+            foreach (var d in subscribers)
+                _eventInvocations.Add((eventName, d));
         }
+
+        foreach (var d in subscribers)
+            d.DynamicInvoke(args);
     }
 
     public int EventSubscriberCount(string eventName)
-        => _eventHandlers.TryGetValue(eventName, out var handler) && handler is not null
-            ? handler.GetInvocationList().Length
-            : 0;
+    {
+        lock (_gate)
+            return _eventHandlers.TryGetValue(eventName, out var handler) && handler is not null
+                ? handler.GetInvocationList().Length
+                : 0;
+    }
 
     public void VerifyEventSubscribed(string eventName, Delegate? handler, Times times)
-        => VerifyEventCount(eventName, handler, times, _eventSubscribes, "Subscribed");
+    {
+        lock (_gate)
+            VerifyEventCount(eventName, handler, times, _eventSubscribes, "Subscribed");
+    }
 
     public void VerifyEventUnsubscribed(string eventName, Delegate? handler, Times times)
-        => VerifyEventCount(eventName, handler, times, _eventUnsubscribes, "Unsubscribed");
+    {
+        lock (_gate)
+            VerifyEventCount(eventName, handler, times, _eventUnsubscribes, "Unsubscribed");
+    }
 
     public void VerifyEventHandlerInvoked(string eventName, Delegate? handler, Times times)
     {
-        int count = _eventInvocations.Count(x => x.Event == eventName && (handler is null || Equals(x.Handler, handler)));
-        if (!times.IsMatch(count))
-            throw new VerificationException(
-                $"Verify failed: event {eventName} HandlerInvoked - {times.Describe(count)}.");
+        lock (_gate)
+        {
+            int count = _eventInvocations.Count(x => x.Event == eventName && (handler is null || Equals(x.Handler, handler)));
+            if (!times.IsMatch(count))
+                throw new VerificationException(
+                    $"Verify failed: event {eventName} HandlerInvoked - {times.Describe(count)}.");
+        }
     }
 
     private static void VerifyEventCount(
@@ -108,7 +140,8 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     public SetupEntry AddSetup(string methodName, Type[]? typeArgs, IMatcher[] matchers)
     {
         var entry = new SetupEntry(methodName, typeArgs, matchers);
-        _setups.Add(entry);
+        lock (_gate)
+            _setups.Add(entry);
         return entry;
     }
 
@@ -119,10 +152,12 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
             return;
         }
 
-        var unused = _setups
-            .Where(e => !e.WasMatched)
-            .Select(e => FormatSignature(e.MethodName, e.TypeArgs, e.Matchers))
-            .ToList();
+        List<string> unused;
+        lock (_gate)
+            unused = _setups
+                .Where(e => !e.WasMatched)
+                .Select(e => FormatSignature(e.MethodName, e.TypeArgs, e.Matchers))
+                .ToList();
 
         if (unused.Count > 0)
         {
@@ -132,43 +167,43 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
 
     public TReturn Intercept<TReturn>(string methodName, Type[]? typeArgs, object?[] args)
     {
-        _calls.Add((methodName, typeArgs, args));
-        _session?.Record(this, methodName, typeArgs, args);
+        SetupEntry? setup;
+        Func<object?>? sequenceNext = null;
 
-        var setup = _setups.LastOrDefault(s => s.IsMatch(methodName, typeArgs, args));
+        lock (_gate)
+        {
+            _calls.Add((methodName, typeArgs, args));
+            _session?.Record(this, methodName, typeArgs, args);
 
+            setup = _setups.LastOrDefault(s => s.IsMatch(methodName, typeArgs, args));
+            if (setup is not null)
+            {
+                setup.WasMatched = true;
+                for (int i = 0; i < setup.Matchers.Length; i++)
+                    setup.Matchers[i].OnMatched(args[i]);
+
+                if (setup.SequenceQueue is { Count: > 0 })
+                    sequenceNext = setup.SequenceQueue.Dequeue();
+            }
+        }
+
+        // User code runs outside the lock.
         if (setup is null)
         {
             if (wrapping is not null)
-            {
                 return InvokeOnWrapping<TReturn>(methodName, typeArgs, args);
-            }
-
             if (strict)
-            {
                 throw new MissingSetupException(FormatSignature(methodName, typeArgs, []));
-            }
-
             return SmartDefaults.For<TReturn>();
-        }
-
-        setup.WasMatched = true;
-        for (int i = 0; i < setup.Matchers.Length; i++)
-        {
-            setup.Matchers[i].OnMatched(args[i]);
         }
 
         setup.Callback?.Invoke(args);
 
         if (setup.ThrowException is not null)
-        {
             throw setup.ThrowException;
-        }
 
-        if (setup.SequenceQueue is not null && setup.SequenceQueue.Count > 0)
-        {
-            return (TReturn)setup.SequenceQueue.Dequeue()()!;
-        }
+        if (sequenceNext is not null)
+            return (TReturn)sequenceNext()!;
 
         return setup.ReturnFactory is not null
             ? (TReturn)setup.ReturnFactory(args)!
@@ -177,10 +212,21 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
 
     public void InterceptVoid(string methodName, Type[]? typeArgs, object?[] args)
     {
-        _calls.Add((methodName, typeArgs, args));
-        _session?.Record(this, methodName, typeArgs, args);
+        SetupEntry? setup;
 
-        var setup = _setups.LastOrDefault(s => s.IsMatch(methodName, typeArgs, args));
+        lock (_gate)
+        {
+            _calls.Add((methodName, typeArgs, args));
+            _session?.Record(this, methodName, typeArgs, args);
+
+            setup = _setups.LastOrDefault(s => s.IsMatch(methodName, typeArgs, args));
+            if (setup is not null)
+            {
+                setup.WasMatched = true;
+                for (int i = 0; i < setup.Matchers.Length; i++)
+                    setup.Matchers[i].OnMatched(args[i]);
+            }
+        }
 
         if (setup is null)
         {
@@ -189,31 +235,21 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
                 InvokeVoidOnWrapping(methodName, typeArgs, args);
                 return;
             }
-
             if (strict)
-            {
                 throw new MissingSetupException(FormatSignature(methodName, typeArgs, []));
-            }
-
             return;
-        }
-
-        setup.WasMatched = true;
-        for (int i = 0; i < setup.Matchers.Length; i++)
-        {
-            setup.Matchers[i].OnMatched(args[i]);
         }
 
         setup.Callback?.Invoke(args);
 
         if (setup.ThrowException is not null)
-        {
             throw setup.ThrowException;
-        }
     }
 
     public void VerifyInOrder((string Method, Type[]? TypeArgs, IMatcher[] Matchers)[] steps)
     {
+        lock (_gate)
+        {
         int callIndex = 0;
         for (int step = 0; step < steps.Length; step++)
         {
@@ -239,11 +275,14 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
                 throw new VerificationException(message);
             }
         }
+        }
     }
 
     public void Verify(string methodName, Type[]? typeArgs, IMatcher[] matchers, Times times)
     {
-        int count = CountCalls(methodName, typeArgs, matchers);
+        lock (_gate)
+        {
+        int count = _calls.Count(c => CallMatches(c, methodName, typeArgs, matchers));
         if (!times.IsMatch(count))
             throw new VerificationException($"Verify failed: {FormatSignature(methodName, typeArgs, matchers)} - {times.Describe(count)}.");
 
@@ -254,17 +293,21 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
                 _verifiedCallIndices.Add(i);
             }
         }
+        }
     }
 
     public void VerifyNoOtherCalls()
     {
-        var unverified = new List<string>();
-        for (int i = 0; i < _calls.Count; i++)
+        List<string> unverified = [];
+        lock (_gate)
         {
-            if (!_verifiedCallIndices.Contains(i))
+            for (int i = 0; i < _calls.Count; i++)
             {
-                var c = _calls[i];
-                unverified.Add(FormatCall(c.Method, c.TypeArgs, c.Args));
+                if (!_verifiedCallIndices.Contains(i))
+                {
+                    var c = _calls[i];
+                    unverified.Add(FormatCall(c.Method, c.TypeArgs, c.Args));
+                }
             }
         }
 
@@ -273,14 +316,14 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
                 $"VerifyNoOtherCalls failed - unexpected call(s):\n{string.Join("\n", unverified.Select(s => $"  - {s}"))}");
     }
 
-    private int CountCalls(string methodName, Type[]? typeArgs, IMatcher[] matchers)
-        => _calls.Count(c => CallMatches(c, methodName, typeArgs, matchers));
-
     public IReadOnlyList<(string Method, Type[]? TypeArgs, object?[] Args)> GetCalls(
         string methodName, Type[]? typeArgs, IMatcher[] matchers)
-        => _calls
-            .Where(c => CallMatches(c, methodName, typeArgs, matchers))
-            .ToList();
+    {
+        lock (_gate)
+            return _calls
+                .Where(c => CallMatches(c, methodName, typeArgs, matchers))
+                .ToList();
+    }
 
     private static bool CallMatches(
         (string Method, Type[]? TypeArgs, object?[] Args) call,

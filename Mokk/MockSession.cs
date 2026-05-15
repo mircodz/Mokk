@@ -15,6 +15,7 @@ public interface IMockObject
 /// </summary>
 public sealed class MockSession
 {
+    private readonly object _gate = new();
     private readonly List<(MockInterceptor Owner, string Method, Type[]? TypeArgs, object?[] Args)> _timeline = [];
 
     public MockSession(params IMockObject[] mocks) => Track(mocks);
@@ -26,10 +27,17 @@ public sealed class MockSession
         return this;
     }
 
-    public void Reset() => _timeline.Clear();
+    public void Reset()
+    {
+        lock (_gate)
+            _timeline.Clear();
+    }
 
     internal void Record(MockInterceptor owner, string method, Type[]? typeArgs, object?[] args)
-        => _timeline.Add((owner, method, typeArgs, args));
+    {
+        lock (_gate)
+            _timeline.Add((owner, method, typeArgs, args));
+    }
 
     /// <summary>
     /// Asserts the steps occurred in this relative order across the tracked
@@ -37,6 +45,8 @@ public sealed class MockSession
     /// </summary>
     public void VerifyInOrder(params ICallSpec[] steps)
     {
+        lock (_gate)
+        {
         int from = 0;
         for (int s = 0; s < steps.Length; s++)
         {
@@ -60,6 +70,7 @@ public sealed class MockSession
                     s == 0
                         ? $"Session.VerifyInOrder failed: expected call to {step.Method} was not found."
                         : $"Session.VerifyInOrder failed: expected call to {step.Method} after {steps[s - 1].Method}, but it was not found.");
+        }
         }
     }
 }
