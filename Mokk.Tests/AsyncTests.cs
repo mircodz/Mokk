@@ -5,8 +5,37 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-public class AsyncThrowsTests
+public class AsyncTests
 {
+    [Fact]
+    public async Task ReturnsAsync_for_Task()
+    {
+        var mock = new MockUserRepository();
+        mock.GetUserAsync(42).ReturnsAsync("Alice");
+
+        Assert.Equal("Alice", await mock.Instance.GetUserAsync(42));
+    }
+
+    [Fact]
+    public async Task ReturnsAsync_for_ValueTask()
+    {
+        var mock = new MockUserRepository();
+        mock.CountAsync().ReturnsAsync(5);
+
+        Assert.Equal(5, await mock.Instance.CountAsync());
+    }
+
+    [Fact]
+    public async Task ReturnsAsync_factory_is_invoked_per_call()
+    {
+        var mock = new MockUserRepository();
+        int n = 0;
+        mock.GetUserAsync(Any).ReturnsAsync(() => $"user{++n}");
+
+        Assert.Equal("user1", await mock.Instance.GetUserAsync(1));
+        Assert.Equal("user2", await mock.Instance.GetUserAsync(1));
+    }
+
     [Fact]
     public async Task ThrowsAsync_faults_Task_of_T()
     {
@@ -57,17 +86,6 @@ public class AsyncThrowsTests
         var task = mock.Instance.GetUserAsync(1); // must not throw here
         Assert.True(task.IsFaulted);
         await Assert.ThrowsAsync<InvalidOperationException>(() => task);
-    }
-
-    [Fact]
-    public async Task ReturnsAsync_factory_is_invoked_per_call()
-    {
-        var mock = new MockUserRepository();
-        int n = 0;
-        mock.GetUserAsync(Any).ReturnsAsync(() => $"user{++n}");
-
-        Assert.Equal("user1", await mock.Instance.GetUserAsync(1));
-        Assert.Equal("user2", await mock.Instance.GetUserAsync(1));
     }
 
     [Fact]
