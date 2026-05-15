@@ -70,6 +70,28 @@ mock.GetTemplate(Any, Any).Sequence()
     .Throws(new Exception("exhausted"));
 ```
 
+## Async
+
+```csharp
+mock.GetUserAsync(Any).ReturnsAsync("Alice");
+mock.GetUserAsync(Any).ReturnsAsync(() => Compute());
+mock.GetUserAsync(Any).ThrowsAsync(new IOException()); // faulted task, not a sync throw
+
+mock.GetUserAsync(Any).Sequence()
+    .ReturnsAsync("first")
+    .ThrowsAsync(new Exception("exhausted"));
+```
+
+## ref / out / in
+
+```csharp
+// out values are set from a callback; out params drop out of the setup signature
+mock.TryParse("42").Callback(args => args[1] = 42).Returns(true);
+mock.Instance.TryParse("42", out int value); // value == 42
+
+mock.Increment(Any).Callback(args => args[0] = (int)args[0]! + 1);
+```
+
 ## Generic methods
 
 ```csharp
@@ -106,6 +128,10 @@ mock.Instance.UserChanged += (sender, e) => ...;
 mock.UserChanged.Raise(mock.Instance, new UserChangedEventArgs(42));
 mock.AuditLogged.Raise(7, "deleted"); // custom delegate: positional args
 Assert.Equal(1, mock.UserChanged.SubscriberCount);
+
+mock.UserChanged.Subscribed(handler, Times.Once);
+mock.UserChanged.Unsubscribed(Times.Never);
+mock.UserChanged.HandlerInvoked(handler, Times.Exactly(2));
 ```
 
 Abstract-class mocks expose the raiser as `{EventName}Handle`.
