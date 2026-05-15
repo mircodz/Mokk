@@ -339,4 +339,40 @@ public class VerificationTests
 
         mock.VerifyNoOtherCalls();
     }
+
+    [Fact]
+    public void Verify_failure_message_lists_recorded_calls_and_marks_matches()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("admin@site.com", "hello");
+        mock.Instance.Send("other@site.com", "x");
+
+        var ex = Assert.Throws<VerificationException>(() =>
+            mock.Send("admin@site.com", Any).Verify(Times.Exactly(2)));
+
+        Assert.Contains("expected exactly 2 calls, got 1", ex.Message);
+        Assert.Contains("Recorded on IEmailService:", ex.Message);
+        Assert.Contains("Send(\"admin@site.com\", \"hello\")   [matched]", ex.Message);
+        Assert.Contains("Send(\"other@site.com\", \"x\")", ex.Message);
+    }
+
+    [Fact]
+    public void VerifyInOrder_failure_message_shows_step_breakdown_and_log()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.GetTemplate("welcome", 1);
+
+        var ex = Assert.Throws<VerificationException>(() =>
+            mock.VerifyInOrder(mock.GetTemplate(Any, Any), mock.Send(Any, Any)));
+
+        Assert.Contains("VerifyInOrder on IEmailService failed at step 2/2.", ex.Message);
+        Assert.Contains("step 1  GetTemplate(_, _)", ex.Message);
+        Assert.Contains("OK    @ call 2", ex.Message);
+        Assert.Contains("FAIL  no match after call 2", ex.Message);
+        Assert.Contains("call 1  Send(\"a@b.com\", \"hi\")", ex.Message);
+    }
 }

@@ -250,31 +250,36 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     {
         lock (_gate)
         {
-        int callIndex = 0;
-        for (int step = 0; step < steps.Length; step++)
-        {
-            var (method, typeArgs, matchers) = steps[step];
-            bool found = false;
-
-            for (int i = callIndex; i < _calls.Count; i++)
+            int callIndex = 0;
+            var matchedAt = new int[steps.Length];
+            for (int step = 0; step < steps.Length; step++)
             {
-                if (CallMatches(_calls[i], method, typeArgs, matchers))
+                var (method, typeArgs, matchers) = steps[step];
+                int hit = -1;
+                for (int i = callIndex; i < _calls.Count; i++)
+                    if (CallMatches(_calls[i], method, typeArgs, matchers)) { hit = i; break; }
+
+                if (hit < 0)
                 {
-                    callIndex = i + 1;
-                    found = true;
-                    break;
+                    var stepLines = new List<(int, string, string)>();
+                    for (int s = 0; s < steps.Length; s++)
+                    {
+                        var sig = FormatSignature(steps[s].Method, steps[s].TypeArgs, steps[s].Matchers);
+                        string status =
+                            s < step ? $"OK    @ call {matchedAt[s]}" :
+                            s == step ? (step == 0 ? "FAIL  not found" : $"FAIL  no match after call {callIndex}") :
+                            "-";
+                        stepLines.Add((s + 1, sig, status));
+                    }
+                    var callLines = _calls.Select(c => FormatCall(c.Method, c.TypeArgs, c.Args)).ToList();
+                    throw new VerificationException(RenderInOrderFailure(
+                        $"VerifyInOrder on {MockedTypeName} failed at step {step + 1}/{steps.Length}.",
+                        stepLines, callLines));
                 }
-            }
 
-            if (!found)
-            {
-                var sig = FormatSignature(method, typeArgs, matchers);
-                var message = step == 0
-                    ? $"VerifyInOrder failed: expected call to {sig} was not found."
-                    : $"VerifyInOrder failed: expected call to {sig} after {FormatSignature(steps[step - 1].Method, steps[step - 1].TypeArgs, steps[step - 1].Matchers)}, but it was not found.";
-                throw new VerificationException(message);
+                matchedAt[step] = hit + 1;
+                callIndex = hit + 1;
             }
-        }
         }
     }
 
@@ -282,17 +287,34 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     {
         lock (_gate)
         {
-        int count = _calls.Count(c => CallMatches(c, methodName, typeArgs, matchers));
-        if (!times.IsMatch(count))
-            throw new VerificationException($"Verify failed: {FormatSignature(methodName, typeArgs, matchers)} - {times.Describe(count)}.");
-
-        for (int i = 0; i < _calls.Count; i++)
-        {
-            if (CallMatches(_calls[i], methodName, typeArgs, matchers))
+            int count = _calls.Count(c => CallMatches(c, methodName, typeArgs, matchers));
+            if (!times.IsMatch(count))
             {
-                _verifiedCallIndices.Add(i);
+                var sb = new System.Text.StringBuilder(
+                    $"Verify failed: {FormatSignature(methodName, typeArgs, matchers)} - {times.Describe(count)}.");
+                sb.Append($"\n\nRecorded on {MockedTypeName}:");
+                if (_calls.Count == 0)
+                {
+                    sb.Append("\n  (no calls recorded)");
+                }
+                else
+                {
+                    int shown = Math.Min(_calls.Count, CallLogCap);
+                    for (int i = 0; i < shown; i++)
+                    {
+                        var c = _calls[i];
+                        var mark = CallMatches(c, methodName, typeArgs, matchers) ? "   [matched]" : "";
+                        sb.Append($"\n- {FormatCall(c.Method, c.TypeArgs, c.Args)}{mark}");
+                    }
+                    if (_calls.Count > shown)
+                        sb.Append($"\n- … (+{_calls.Count - shown} more)");
+                }
+                throw new VerificationException(sb.ToString());
             }
-        }
+
+            for (int i = 0; i < _calls.Count; i++)
+                if (CallMatches(_calls[i], methodName, typeArgs, matchers))
+                    _verifiedCallIndices.Add(i);
         }
     }
 
@@ -356,20 +378,66 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
         return typeArgs?.Length > 0 ? method.MakeGenericMethod(typeArgs) : method;
     }
 
-    private static string FormatCall(string methodName, Type[]? typeArgs, object?[] args)
+    internal string MockedTypeName => wrappingType?.Name ?? "mock";
+
+    private const int CallLogCap = 30;
+
+    internal static string FormatArg(object? a) => a switch
+    {
+        null => "null",
+        string s => $"\"{Truncate(s)}\"",
+        char c => $"'{c}'",
+        _ => Truncate(a.ToString() ?? ""),
+    };
+
+    private static string Truncate(string s) => s.Length > 60 ? s.Substring(0, 59) + "…" : s;
+
+    internal static string FormatCall(string methodName, Type[]? typeArgs, object?[] args)
     {
         string typeArgStr = typeArgs?.Length > 0
             ? $"<{string.Join(", ", typeArgs.Select(t => t.Name))}>"
             : "";
-        return $"{methodName}{typeArgStr}({string.Join(", ", args.Select(a => a?.ToString() ?? "null"))})";
+        return $"{methodName}{typeArgStr}({string.Join(", ", args.Select(FormatArg))})";
     }
 
-    private static string FormatSignature(string methodName, Type[]? typeArgs, IMatcher[] matchers)
+    internal static string FormatSignature(string methodName, Type[]? typeArgs, IMatcher[] matchers)
     {
         string typeArgStr = typeArgs?.Length > 0
             ? $"<{string.Join(", ", typeArgs.Select(t => t == typeof(AnyType) ? "*" : t.Name))}>"
             : "";
         return $"{methodName}{typeArgStr}({string.Join(", ", matchers.Select(m => m.Describe()))})";
+    }
+
+    // Shared "step N/M + call log" renderer for VerifyInOrder (single mock and
+    // session). Steps are pre-formatted; callers supply the failing step's
+    // header line and the call lines (already prefixed for sessions).
+    internal static string RenderInOrderFailure(
+        string header,
+        IReadOnlyList<(int Num, string Sig, string Status)> steps,
+        IReadOnlyList<string> calls)
+    {
+        int w = steps.Count == 0 ? 0 : steps.Max(s => s.Sig.Length);
+        var sb = new System.Text.StringBuilder(header).Append('\n');
+        foreach (var s in steps)
+            sb.Append($"\n  step {s.Num}  {s.Sig.PadRight(w)}  {s.Status}");
+        sb.Append('\n');
+        AppendCallLog(sb, calls);
+        return sb.ToString();
+    }
+
+    internal static void AppendCallLog(System.Text.StringBuilder sb, IReadOnlyList<string> calls)
+    {
+        if (calls.Count == 0)
+        {
+            sb.Append("\n  (no calls recorded)");
+            return;
+        }
+
+        int shown = System.Math.Min(calls.Count, CallLogCap);
+        for (int i = 0; i < shown; i++)
+            sb.Append($"\n  call {i + 1}  {calls[i]}");
+        if (calls.Count > shown)
+            sb.Append($"\n  … (+{calls.Count - shown} more)");
     }
 
     internal static bool TypeArgsMatch(Type[]? expected, Type[]? actual)

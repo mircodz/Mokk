@@ -128,4 +128,23 @@ public class SessionTests
         Assert.Throws<VerificationException>(() =>
             session.VerifyInOrder(email.Send(Any, Any)));
     }
+
+    [Fact]
+    public void Failure_message_prefixes_steps_and_calls_with_mock_type()
+    {
+        var email = new MockEmailService();
+        var repo = new MockUserRepository();
+        var session = new MockSession(email, repo);
+
+        email.Instance.Send("a@b.com", "hi");
+
+        var ex = Assert.Throws<VerificationException>(() =>
+            session.VerifyInOrder(email.Send(Any, Any), repo.Delete(Any)));
+
+        Assert.Contains("Session.VerifyInOrder failed at step 2/2.", ex.Message);
+        Assert.Contains("IEmailService.Send(_, _)", ex.Message);
+        Assert.Contains("IUserRepository.Delete(_)", ex.Message);
+        Assert.Contains("FAIL  no match after call 1", ex.Message);
+        Assert.Contains("call 1  IEmailService  Send(\"a@b.com\", \"hi\")", ex.Message);
+    }
 }

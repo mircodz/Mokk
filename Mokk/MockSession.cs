@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Mokk;
 
@@ -47,30 +48,46 @@ public sealed class MockSession
     {
         lock (_gate)
         {
-        int from = 0;
-        for (int s = 0; s < steps.Length; s++)
-        {
-            var step = steps[s];
-            bool found = false;
-
-            for (int i = from; i < _timeline.Count; i++)
+            int from = 0;
+            var matchedAt = new int[steps.Length];
+            for (int s = 0; s < steps.Length; s++)
             {
-                var e = _timeline[i];
-                if (ReferenceEquals(e.Owner, step.Owner)
-                    && MockInterceptor.CallMatches(e.Method, e.TypeArgs, e.Args, step.Method, step.TypeArgs, step.Matchers))
+                var step = steps[s];
+                int hit = -1;
+                for (int i = from; i < _timeline.Count; i++)
                 {
-                    from = i + 1;
-                    found = true;
-                    break;
+                    var e = _timeline[i];
+                    if (ReferenceEquals(e.Owner, step.Owner)
+                        && MockInterceptor.CallMatches(e.Method, e.TypeArgs, e.Args, step.Method, step.TypeArgs, step.Matchers))
+                    {
+                        hit = i;
+                        break;
+                    }
                 }
-            }
 
-            if (!found)
-                throw new VerificationException(
-                    s == 0
-                        ? $"Session.VerifyInOrder failed: expected call to {step.Method} was not found."
-                        : $"Session.VerifyInOrder failed: expected call to {step.Method} after {steps[s - 1].Method}, but it was not found.");
-        }
+                if (hit < 0)
+                {
+                    var stepLines = new List<(int, string, string)>();
+                    for (int k = 0; k < steps.Length; k++)
+                    {
+                        var sig = $"{steps[k].Owner.MockedTypeName}.{MockInterceptor.FormatSignature(steps[k].Method, steps[k].TypeArgs, steps[k].Matchers)}";
+                        string status =
+                            k < s ? $"OK    @ call {matchedAt[k]}" :
+                            k == s ? (s == 0 ? "FAIL  not found" : $"FAIL  no match after call {from}") :
+                            "-";
+                        stepLines.Add((k + 1, sig, status));
+                    }
+                    var callLines = _timeline
+                        .Select(e => $"{e.Owner.MockedTypeName}  {MockInterceptor.FormatCall(e.Method, e.TypeArgs, e.Args)}")
+                        .ToList();
+                    throw new VerificationException(MockInterceptor.RenderInOrderFailure(
+                        $"Session.VerifyInOrder failed at step {s + 1}/{steps.Length}.",
+                        stepLines, callLines));
+                }
+
+                matchedAt[s] = hit + 1;
+                from = hit + 1;
+            }
         }
     }
 }
