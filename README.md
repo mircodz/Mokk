@@ -33,6 +33,15 @@ using Mokk;
 [assembly: GenerateMock(typeof(AbstractNotificationService))]
 ```
 
+## Factory (C# 14, opt-in)
+
+```csharp
+var mock = new MockEmailService();   // always works
+var mock = IEmailService.Mock();     // with <DefineConstants>MOKK_CSHARP14</DefineConstants> + LangVersion 14
+```
+
+`Mock(strict:, wrapping:, onUnusedSetup:)` forwards to the constructor.
+
 ## Matchers
 
 ```csharp
