@@ -76,6 +76,11 @@ public interface IMessage<TKey, TValue>
     event System.Action<TKey, TValue> Updated;
 }
 
+public class Widget
+{
+    public int Id { get; set; }
+}
+
 public interface IBox<T> where T : class, new()
 {
     T Create();

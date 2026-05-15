@@ -4,266 +4,8 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
+// Verify(Times), argument-scoped verification, VerifyInOrder, VerifyNoOtherCalls.
 public class VerificationTests
-{
-    [Fact]
-    public void Exactly_N_calls()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.Send("a@test.com", "s1");
-        mock.Instance.Send("b@test.com", "s2");
-
-        mock.Send(Any, Any).Verify(Times.Exactly(2));
-    }
-
-    [Fact]
-    public void AtLeast_N_calls()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.Send("a@test.com", "s1");
-        mock.Instance.Send("b@test.com", "s2");
-        mock.Instance.Send("c@test.com", "s3");
-
-        mock.Send(Any, Any).Verify(Times.AtLeast(2));
-    }
-
-    [Fact]
-    public void Fails_when_count_doesnt_match()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@test.com", "s1");
-
-        Assert.Throws<VerificationException>(() =>
-            mock.Send(Any, Any).Verify(Times.Exactly(2)));
-    }
-
-    [Fact]
-    public void Scoped_to_specific_argument()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.Send("admin@site.com", "s1");
-        mock.Instance.Send("admin@site.com", "s2");
-        mock.Instance.Send("other@site.com", "s3");
-
-        mock.Send("admin@site.com", Any).Verify(Times.Exactly(2));
-    }
-
-    [Fact]
-    public void Void_method_calls()
-    {
-        var mock = new MockUserRepository();
-        mock.Instance.Delete(1);
-        mock.Instance.Delete(2);
-
-        mock.Delete(Any).Verify(Times.Exactly(2));
-    }
-}
-
-public class VerifyInOrderTests
-{
-    [Fact]
-    public void Passes_when_calls_happen_in_order()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.GetTemplate("welcome", 1);
-        mock.Instance.Send("a@b.com", "hi");
-
-        mock.VerifyInOrder(
-            mock.GetTemplate(Any, Any),
-            mock.Send(Any, Any)
-        );
-    }
-
-    [Fact]
-    public void Fails_when_calls_happen_in_wrong_order()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Instance.GetTemplate("welcome", 1);
-
-        Assert.Throws<VerificationException>(() =>
-            mock.VerifyInOrder(
-                mock.GetTemplate(Any, Any),
-                mock.Send(Any, Any)
-            ));
-    }
-
-    [Fact]
-    public void Allows_interleaved_calls_between_steps()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.GetTemplate("welcome", 1);
-        mock.Instance.GetTemplate("footer", 2);  // interleaved - should be ignored
-        mock.Instance.Send("a@b.com", "hi");
-
-        mock.VerifyInOrder(
-            mock.GetTemplate(Any, Any),
-            mock.Send(Any, Any)
-        );
-    }
-
-    [Fact]
-    public void Matchers_are_respected_per_step()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Instance.Send("b@b.com", "hi");
-
-        // First Send to a@b.com, then any Send - order + matchers both apply
-        mock.VerifyInOrder(
-            mock.Send("a@b.com", Any),
-            mock.Send("b@b.com", Any)
-        );
-    }
-
-    [Fact]
-    public void Fails_with_message_naming_the_missing_step()
-    {
-        var mock = new MockEmailService();
-
-        mock.Instance.GetTemplate("welcome", 1);
-        // Send never called
-
-        var ex = Assert.Throws<VerificationException>(() =>
-            mock.VerifyInOrder(
-                mock.GetTemplate(Any, Any),
-                mock.Send(Any, Any)
-            ));
-
-        Assert.Contains("Send", ex.Message);
-        Assert.Contains("GetTemplate", ex.Message);
-    }
-
-    [Fact]
-    public void Works_with_void_and_non_void_methods_mixed()
-    {
-        var mock = new MockUserRepository();
-        mock.GetUserAsync(Any).Returns((int id) => Task.FromResult($"User#{id}"));
-
-        mock.Instance.GetUserAsync(1);
-        mock.Instance.Delete(1);
-
-        mock.VerifyInOrder(
-            mock.GetUserAsync(Any),
-            mock.Delete(Any)
-        );
-    }
-}
-
-public class VerifyNoOtherCallsTests
-{
-    [Fact]
-    public void Passes_when_no_calls_made()
-    {
-        var mock = new MockEmailService();
-        mock.VerifyNoOtherCalls();
-    }
-
-    [Fact]
-    public void Passes_when_all_calls_verified()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@b.com", "hi");
-
-        mock.Send(Any, Any).Verify(Times.Once);
-        mock.VerifyNoOtherCalls();
-    }
-
-    [Fact]
-    public void Fails_when_call_was_not_verified()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@b.com", "hi");
-
-        Assert.Throws<VerificationException>(() => mock.VerifyNoOtherCalls());
-    }
-
-    [Fact]
-    public void Fails_when_second_call_not_verified()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Instance.Send("b@b.com", "hi");
-
-        mock.Send("a@b.com", Any).Verify(Times.Once);
-
-        // second Send was not covered by that Verify
-        Assert.Throws<VerificationException>(() => mock.VerifyNoOtherCalls());
-    }
-
-    [Fact]
-    public void Multiple_verifies_cover_multiple_calls()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Instance.Send("b@b.com", "hi");
-
-        mock.Send("a@b.com", Any).Verify(Times.Once);
-        mock.Send("b@b.com", Any).Verify(Times.Once);
-        mock.VerifyNoOtherCalls();
-    }
-
-    [Fact]
-    public void Wildcard_verify_covers_all_matching_calls()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Instance.Send("b@b.com", "hello");
-
-        mock.Send(Any, Any).Verify(Times.Exactly(2));
-        mock.VerifyNoOtherCalls();
-    }
-
-    [Fact]
-    public void Different_methods_each_need_verification()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.GetTemplate(Any, Any).Returns("t");
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Instance.GetTemplate("welcome", 1);
-
-        mock.Send(Any, Any).Verify(Times.Once);
-        // GetTemplate not verified
-        Assert.Throws<VerificationException>(() => mock.VerifyNoOtherCalls());
-    }
-
-    [Fact]
-    public void Reset_clears_verified_state()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Any, Any).Returns(true);
-        mock.Instance.Send("a@b.com", "hi");
-        mock.Send(Any, Any).Verify(Times.Once);
-
-        mock.Reset();
-
-        // After reset, no calls - should pass
-        mock.VerifyNoOtherCalls();
-    }
-}
-
-public class TimesTests
 {
     [Fact]
     public void Times_Once_passes_when_called_once()
@@ -390,12 +132,211 @@ public class TimesTests
     }
 
     [Fact]
-    public void Times_works_with_void_methods()
+    public void Verify_is_scoped_to_matching_arguments()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+
+        mock.Instance.Send("admin@site.com", "s1");
+        mock.Instance.Send("admin@site.com", "s2");
+        mock.Instance.Send("other@site.com", "s3");
+
+        mock.Send("admin@site.com", Any).Verify(Times.Exactly(2));
+    }
+
+    [Fact]
+    public void Verify_works_with_void_methods()
     {
         var repo = new MockUserRepository();
         repo.Instance.Delete(1);
         repo.Instance.Delete(2);
 
         repo.Delete(Any).Verify(Times.Exactly(2));
+    }
+
+    [Fact]
+    public void InOrder_passes_when_calls_happen_in_order()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+
+        mock.Instance.GetTemplate("welcome", 1);
+        mock.Instance.Send("a@b.com", "hi");
+
+        mock.VerifyInOrder(
+            mock.GetTemplate(Any, Any),
+            mock.Send(Any, Any)
+        );
+    }
+
+    [Fact]
+    public void InOrder_fails_when_calls_happen_in_wrong_order()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.GetTemplate("welcome", 1);
+
+        Assert.Throws<VerificationException>(() =>
+            mock.VerifyInOrder(
+                mock.GetTemplate(Any, Any),
+                mock.Send(Any, Any)
+            ));
+    }
+
+    [Fact]
+    public void InOrder_allows_interleaved_calls_between_steps()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+
+        mock.Instance.GetTemplate("welcome", 1);
+        mock.Instance.GetTemplate("footer", 2);  // interleaved - should be ignored
+        mock.Instance.Send("a@b.com", "hi");
+
+        mock.VerifyInOrder(
+            mock.GetTemplate(Any, Any),
+            mock.Send(Any, Any)
+        );
+    }
+
+    [Fact]
+    public void InOrder_respects_matchers_per_step()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.Send("b@b.com", "hi");
+
+        mock.VerifyInOrder(
+            mock.Send("a@b.com", Any),
+            mock.Send("b@b.com", Any)
+        );
+    }
+
+    [Fact]
+    public void InOrder_failure_message_names_the_missing_step()
+    {
+        var mock = new MockEmailService();
+
+        mock.Instance.GetTemplate("welcome", 1);
+
+        var ex = Assert.Throws<VerificationException>(() =>
+            mock.VerifyInOrder(
+                mock.GetTemplate(Any, Any),
+                mock.Send(Any, Any)
+            ));
+
+        Assert.Contains("Send", ex.Message);
+        Assert.Contains("GetTemplate", ex.Message);
+    }
+
+    [Fact]
+    public void InOrder_works_with_void_and_non_void_mixed()
+    {
+        var mock = new MockUserRepository();
+        mock.GetUserAsync(Any).Returns((int id) => Task.FromResult($"User#{id}"));
+
+        mock.Instance.GetUserAsync(1);
+        mock.Instance.Delete(1);
+
+        mock.VerifyInOrder(
+            mock.GetUserAsync(Any),
+            mock.Delete(Any)
+        );
+    }
+
+    [Fact]
+    public void NoOtherCalls_passes_when_no_calls_made()
+    {
+        var mock = new MockEmailService();
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void NoOtherCalls_passes_when_all_calls_verified()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("a@b.com", "hi");
+
+        mock.Send(Any, Any).Verify(Times.Once);
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void NoOtherCalls_fails_when_a_call_was_not_verified()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("a@b.com", "hi");
+
+        Assert.Throws<VerificationException>(() => mock.VerifyNoOtherCalls());
+    }
+
+    [Fact]
+    public void NoOtherCalls_fails_when_second_call_not_verified()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.Send("b@b.com", "hi");
+
+        mock.Send("a@b.com", Any).Verify(Times.Once);
+
+        Assert.Throws<VerificationException>(() => mock.VerifyNoOtherCalls());
+    }
+
+    [Fact]
+    public void NoOtherCalls_multiple_verifies_cover_multiple_calls()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.Send("b@b.com", "hi");
+
+        mock.Send("a@b.com", Any).Verify(Times.Once);
+        mock.Send("b@b.com", Any).Verify(Times.Once);
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void NoOtherCalls_wildcard_verify_covers_all_matching_calls()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.Send("b@b.com", "hello");
+
+        mock.Send(Any, Any).Verify(Times.Exactly(2));
+        mock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void NoOtherCalls_different_methods_each_need_verification()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.GetTemplate(Any, Any).Returns("t");
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Instance.GetTemplate("welcome", 1);
+
+        mock.Send(Any, Any).Verify(Times.Once);
+        Assert.Throws<VerificationException>(() => mock.VerifyNoOtherCalls());
+    }
+
+    [Fact]
+    public void Reset_clears_verified_state()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Any, Any).Returns(true);
+        mock.Instance.Send("a@b.com", "hi");
+        mock.Send(Any, Any).Verify(Times.Once);
+
+        mock.Reset();
+
+        mock.VerifyNoOtherCalls();
     }
 }

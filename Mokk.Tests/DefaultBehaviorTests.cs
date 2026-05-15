@@ -1,60 +1,47 @@
-using static Mokk.Wildcard;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Xunit;
+using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-public class SmartDefaultsTests
+// Behaviour when a call has no matching setup: smart defaults, strict mode,
+// and unused-setup reporting.
+public class DefaultBehaviorTests
 {
     [Fact]
-    public void String_returns_empty_string()
+    public void Smart_default_for_string_is_empty()
     {
         var mock = new MockEmailService();
         Assert.Equal("", mock.Instance.GetTemplate("x", 1));
     }
 
     [Fact]
-    public void Bool_returns_false()
+    public void Smart_default_for_bool_is_false()
     {
         var mock = new MockEmailService();
         Assert.False(mock.Instance.Send("a@b.com", "hi"));
     }
 
     [Fact]
-    public async Task Task_of_T_returns_completed_task_with_default()
+    public async Task Smart_default_for_Task_of_T_is_a_completed_task()
     {
-        var mock = new MockUserRepository();
-        // Task<string> completes without throwing - inner value is default(string) = null
-        var task = mock.Instance.GetUserAsync(1);
-        Assert.NotNull(task);
-        var result = await task;
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task ValueTask_of_T_returns_default()
-    {
-        var mock = new MockUserRepository();
-        var result = await mock.Instance.CountAsync();
-        Assert.Equal(0, result);
-    }
-
-    [Fact]
-    public async Task Task_returns_completed_task()
-    {
-        // Task (non-generic) should not throw on await
         var mock = new MockUserRepository();
         var task = mock.Instance.GetUserAsync(1);
-        Assert.NotNull(task);
-        await task; // should complete without exception
-    }
-}
 
-public class StrictModeTests
-{
+        Assert.NotNull(task);
+        Assert.Null(await task); // completes; inner value is default(string)
+    }
+
     [Fact]
-    public void Throws_when_no_setup_matches()
+    public async Task Smart_default_for_ValueTask_of_T_is_default()
+    {
+        var mock = new MockUserRepository();
+        Assert.Equal(0, await mock.Instance.CountAsync());
+    }
+
+    [Fact]
+    public void Strict_throws_when_no_setup_matches()
     {
         var mock = new MockEmailService(strict: true);
 
@@ -62,7 +49,7 @@ public class StrictModeTests
     }
 
     [Fact]
-    public void Does_not_throw_when_setup_matches()
+    public void Strict_does_not_throw_when_setup_matches()
     {
         var mock = new MockEmailService(strict: true);
         mock.Send(Any, Any).Returns(true);
@@ -71,18 +58,7 @@ public class StrictModeTests
     }
 
     [Fact]
-    public void Non_strict_returns_default_when_no_setup()
-    {
-        var mock = new MockEmailService();
-
-        Assert.False(mock.Instance.Send("a@b.com", "hi"));
-    }
-}
-
-public class UnusedSetupTests
-{
-    [Fact]
-    public void Calls_callback_when_setup_never_matched()
+    public void Unused_setup_reported_when_never_matched()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -95,7 +71,7 @@ public class UnusedSetupTests
     }
 
     [Fact]
-    public void No_callback_when_all_setups_matched()
+    public void Unused_setup_not_reported_when_all_matched()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -108,7 +84,7 @@ public class UnusedSetupTests
     }
 
     [Fact]
-    public void Single_callback_lists_all_unused_setups()
+    public void Unused_setup_single_message_lists_all_unused()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -117,13 +93,13 @@ public class UnusedSetupTests
 
         mock.CheckUnusedSetups();
 
-        Assert.Single(warnings); // one message, two entries
+        Assert.Single(warnings);
         Assert.Contains("Send", warnings[0]);
         Assert.Contains("GetTemplate", warnings[0]);
     }
 
     [Fact]
-    public void Only_unmatched_setups_reported()
+    public void Unused_setup_only_reports_unmatched()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -139,12 +115,11 @@ public class UnusedSetupTests
     }
 
     [Fact]
-    public void Disabled_when_no_callback_provided()
+    public void Unused_setup_check_is_disabled_without_a_callback()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
 
-        // Should not throw - no callback = no check
-        mock.CheckUnusedSetups();
+        mock.CheckUnusedSetups(); // no callback => no-op, must not throw
     }
 }

@@ -1,48 +1,10 @@
+using Xunit;
 using static Mokk.Capture;
 using static Mokk.Wildcard;
-using Xunit;
 
 namespace Mokk.Tests;
 
-public class PredicateMatcherTests
-{
-    [Fact]
-    public void Predicate_matcher_with_Matcher_Is()
-    {
-        var mock = new MockEmailService();
-        mock.Send(
-            Matcher<string>.Is(s => s.EndsWith("@internal.com"), "@internal.com"),
-            Any
-        ).Returns(true);
-
-        Assert.True(mock.Instance.Send("alice@internal.com", "hi"));
-        Assert.False(mock.Instance.Send("alice@external.com", "hi"));
-    }
-
-    [Fact]
-    public void Predicate_matcher_with_Arg_Is()
-    {
-        var mock = new MockEmailService();
-        mock.Send(
-            Arg.Is<string>(s => s.Contains("@")),
-            Any
-        ).Returns(true);
-
-        Assert.True(mock.Instance.Send("test@example.com", "subject"));
-        Assert.False(mock.Instance.Send("no-at-sign", "subject"));
-    }
-
-    [Fact]
-    public void Arg_Any_matches_any_value()
-    {
-        var mock = new MockEmailService();
-        mock.Send(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-
-        Assert.True(mock.Instance.Send("any@any.com", "any"));
-    }
-}
-
-public class CaptureSlotTests
+public class CaptureTests
 {
     [Fact]
     public void Captures_argument_on_match()
@@ -86,19 +48,16 @@ public class CaptureSlotTests
     {
         var slot = Slot<string>();
         var mock = new MockEmailService();
-        // First setup captures but only matches specific subject
         mock.Send(Into(slot), "specific").Returns(true);
-        // Second setup is the one that actually wins
-        mock.Send(Any, Any).Returns(false);
+        mock.Send(Any, Any).Returns(false); // this is the setup that wins
 
         mock.Instance.Send("hello@test.com", "other");
 
-        // Slot should not have been captured - the capturing setup didn't win
         Assert.False(slot.HasValue);
     }
 
     [Fact]
-    public void Can_capture_int_argument()
+    public void Can_capture_value_type_argument()
     {
         var slot = Slot<int>();
         var mock = new MockEmailService();

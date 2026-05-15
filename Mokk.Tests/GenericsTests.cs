@@ -3,11 +3,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-public class Widget
-{
-    public int Id { get; set; }
-}
-
 public class GenericsTests
 {
     // --- generic methods ---

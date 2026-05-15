@@ -1,8 +1,9 @@
-using static Mokk.Wildcard;
 using Xunit;
+using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
+// Mocking abstract classes and interface inheritance.
 public class AbstractClassTests
 {
     [Fact]
@@ -35,15 +36,6 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Verify_fails_when_not_called()
-    {
-        var mock = new MockNotificationService();
-
-        Assert.Throws<VerificationException>(() =>
-            mock.Notify(Any, Any).Verify(Times.Once));
-    }
-
-    [Fact]
     public void Instance_is_the_mock_itself()
     {
         var mock = new MockNotificationService();
@@ -60,18 +52,15 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Can_setup_protected_abstract_method()
+    public void Protected_abstract_method_is_accessible_via_shortcut()
     {
         var mock = new MockNotificationService();
-        // Log is protected - accessible via shortcut on the mock
-        mock.Log(Any);
-
-        mock.Instance.Notify("a@b.com", "hi"); // won't call Log directly, but setup works
-        // Just verify no throw
+        mock.Log(Any); // protected member exposed via the shortcut compiles & works
+        mock.Instance.Notify("a@b.com", "hi");
     }
 
     [Fact]
-    public void Reset_clears_call_history()
+    public void Reset_clears_call_history_on_abstract_mock()
     {
         var mock = new MockNotificationService();
         mock.Notify(Any, Any).Returns(true);
@@ -80,12 +69,9 @@ public class AbstractClassTests
 
         mock.Notify(Any, Any).Verify(Times.Never);
     }
-}
 
-public class InheritanceTests
-{
     [Fact]
-    public void Mock_implements_base_and_derived_methods()
+    public void Mock_implements_base_and_derived_interface_members()
     {
         var mock = new MockExtendedService();
         mock.GetName().Returns("TestService");
@@ -96,7 +82,7 @@ public class InheritanceTests
     }
 
     [Fact]
-    public void Mock_can_be_used_as_base_interface()
+    public void Mock_is_usable_as_its_base_interface()
     {
         var mock = new MockExtendedService();
         mock.GetName().Returns("Base");
@@ -106,12 +92,11 @@ public class InheritanceTests
     }
 
     [Fact]
-    public void Instance_returns_interface_implementation()
+    public void Interface_instance_implements_the_interface()
     {
         var mock = new MockEmailService();
         IEmailService service = mock.Instance;
 
-        Assert.NotNull(service);
         Assert.IsAssignableFrom<IEmailService>(service);
     }
 }

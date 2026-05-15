@@ -87,20 +87,6 @@ public class EventTests
     }
 
     [Fact]
-    public void Reset_clears_event_subscriptions()
-    {
-        var mock = new MockUserRepository();
-        int count = 0;
-        mock.Instance.UserChanged += (_, _) => count++;
-
-        mock.Reset();
-        mock.UserChanged.Raise(null, new UserChangedEventArgs(1));
-
-        Assert.Equal(0, count);
-        Assert.Equal(0, mock.UserChanged.SubscriberCount);
-    }
-
-    [Fact]
     public void Abstract_class_event_can_be_raised()
     {
         var mock = new MockNotificationService();
@@ -194,6 +180,7 @@ public class EventTests
 
         mock.Reset();
 
+        Assert.Equal(0, mock.UserChanged.SubscriberCount);
         mock.UserChanged.Subscribed(Times.Never);
         mock.UserChanged.HandlerInvoked(Times.Never);
     }
