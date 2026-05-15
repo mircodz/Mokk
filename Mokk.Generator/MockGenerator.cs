@@ -75,6 +75,7 @@ public class MockGenerator : IIncrementalGenerator
         }
 
         EmitMockClass(sb, mockClassName, qualifiedInterface, members, generics);
+        EmitFactoryExtension(sb, qualifiedInterface, mockClassName, generics, isInterface: true);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
         if (generics.Arity > 0)
@@ -256,6 +257,31 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine();
     }
 
+    // C# 14 static extension members let `IFoo.Mock()` work without the user
+    // declaring their type partial. Gated behind a symbol so pre-C#14 toolchains
+    // (which can't parse `extension`) skip it; the conditional section is never
+    // tokenized when the symbol is undefined.
+    private static void EmitFactoryExtension(
+        StringBuilder sb, string qualifiedType, string mockClassName, GenericInfo generics, bool isInterface)
+    {
+        var mockType = $"{mockClassName}{generics.TypeParams}";
+        var ctorParams = isInterface
+            ? $"bool strict = false, {qualifiedType}? wrapping = null, System.Action<string>? onUnusedSetup = null"
+            : "bool strict = false, System.Action<string>? onUnusedSetup = null";
+        var ctorArgs = isInterface ? "strict, wrapping, onUnusedSetup" : "strict, onUnusedSetup";
+
+        sb.AppendLine();
+        sb.AppendLine("#if MOKK_CSHARP14");
+        sb.AppendLine("public static partial class MokkFactories");
+        sb.AppendLine("{");
+        sb.AppendLine($"    extension{generics.TypeParams}({qualifiedType}){generics.Constraints}");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        public static {mockType} Mock({ctorParams}) => new({ctorArgs});");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        sb.AppendLine("#endif");
+    }
+
     private static void EmitMockClass(
         StringBuilder sb, string className, string qualifiedInterface, MemberCollection members, GenericInfo generics)
     {
@@ -412,6 +438,7 @@ public class MockGenerator : IIncrementalGenerator
         }
 
         EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members, generics);
+        EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
         if (generics.Arity > 0)
