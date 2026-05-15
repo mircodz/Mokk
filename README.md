@@ -80,28 +80,12 @@ mock.DoSomething<AnyType>(Any).Callback(() => count++); // matches any T
 
 ## Generic types
 
-Register the open (unbound) generic and close it at the use site:
-
 ```csharp
-public interface IMessage<TKey, TValue>
-{
-    TValue Get(TKey key);
-    void Put(TKey key, TValue value);
-}
-
-[assembly: GenerateMock(typeof(IMessage<,>))]   // unbound
-// typeof(IMessage<string,int>) also works — it's collapsed to the open form
+[assembly: GenerateMock(typeof(IMessage<,>))] // closed types collapse to this too
 
 var mock = new MockMessage<string, int>();
 mock.Get("answer").Returns(42);
-Assert.Equal(42, mock.Instance.Get("answer"));
 ```
-
-Type-parameter constraints (`where T : class, new()`, `notnull`, etc.) are
-carried onto the generated mock. The same base name at different arities can
-all be registered in one assembly — `IMessage`, `IMessage<T>` and
-`IMessage<TKey,TValue>` become `MockMessage`, `MockMessage<T>` and
-`MockMessage<TKey,TValue>`, distinguished by generic arity like any C# type.
 
 ## Properties
 
@@ -117,29 +101,14 @@ mock.Name.Setter(Any).Verify(Times.Once);
 ## Events
 
 ```csharp
-public interface INotifier
-{
-    event EventHandler<UserChangedEventArgs> UserChanged;
-    event Action<int, string> AuditLogged;
-}
+mock.Instance.UserChanged += (sender, e) => ...;
 
-var mock = new MockNotifier();
-
-// Subscribe through the mocked instance as usual
-mock.Instance.UserChanged += (sender, e) => Console.WriteLine(e.UserId);
-
-// Raise the event from the test
 mock.UserChanged.Raise(mock.Instance, new UserChangedEventArgs(42));
-
-// Custom delegate types: positional args
-mock.AuditLogged.Raise(7, "deleted");
-
-// Inspect subscriptions
+mock.AuditLogged.Raise(7, "deleted"); // custom delegate: positional args
 Assert.Equal(1, mock.UserChanged.SubscriberCount);
 ```
 
-On abstract-class mocks the raiser is exposed as `{EventName}Handle` (the mock *is*
-the class and can't reuse the event name), e.g. `mock.StatusChangedHandle.Raise(...)`.
+Abstract-class mocks expose the raiser as `{EventName}Handle`.
 
 ## Verify
 
