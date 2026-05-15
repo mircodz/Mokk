@@ -133,6 +133,15 @@ public sealed class EventHandle
     public void Raise(object? sender, EventArgs e) => _interceptor.RaiseEvent(_eventName, new[] { sender, e });
 
     public int SubscriberCount => _interceptor.EventSubscriberCount(_eventName);
+
+    public void Subscribed(Times times) => _interceptor.VerifyEventSubscribed(_eventName, null, times);
+    public void Subscribed(Delegate handler, Times times) => _interceptor.VerifyEventSubscribed(_eventName, handler, times);
+
+    public void Unsubscribed(Times times) => _interceptor.VerifyEventUnsubscribed(_eventName, null, times);
+    public void Unsubscribed(Delegate handler, Times times) => _interceptor.VerifyEventUnsubscribed(_eventName, handler, times);
+
+    public void HandlerInvoked(Times times) => _interceptor.VerifyEventHandlerInvoked(_eventName, null, times);
+    public void HandlerInvoked(Delegate handler, Times times) => _interceptor.VerifyEventHandlerInvoked(_eventName, handler, times);
 }
 
 public static class MethodHandleExtensions

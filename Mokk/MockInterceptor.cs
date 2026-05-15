@@ -29,6 +29,9 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     private readonly List<(string Method, Type[]? TypeArgs, object?[] Args)> _calls = [];
     private readonly HashSet<int> _verifiedCallIndices = [];
     private readonly Dictionary<string, Delegate?> _eventHandlers = [];
+    private readonly List<(string Event, Delegate? Handler)> _eventSubscribes = [];
+    private readonly List<(string Event, Delegate? Handler)> _eventUnsubscribes = [];
+    private readonly List<(string Event, Delegate Handler)> _eventInvocations = [];
 
     public void Reset()
     {
@@ -36,16 +39,21 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
         _calls.Clear();
         _verifiedCallIndices.Clear();
         _eventHandlers.Clear();
+        _eventSubscribes.Clear();
+        _eventUnsubscribes.Clear();
+        _eventInvocations.Clear();
     }
 
     public void AddEventHandler(string eventName, Delegate? handler)
     {
+        _eventSubscribes.Add((eventName, handler));
         _eventHandlers.TryGetValue(eventName, out var existing);
         _eventHandlers[eventName] = Delegate.Combine(existing, handler);
     }
 
     public void RemoveEventHandler(string eventName, Delegate? handler)
     {
+        _eventUnsubscribes.Add((eventName, handler));
         _eventHandlers.TryGetValue(eventName, out var existing);
         _eventHandlers[eventName] = Delegate.Remove(existing, handler);
     }
@@ -53,13 +61,46 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     public void RaiseEvent(string eventName, object?[] args)
     {
         _eventHandlers.TryGetValue(eventName, out var handler);
-        handler?.DynamicInvoke(args);
+        if (handler is null)
+            return;
+
+        // Invoke each subscriber individually, in subscription order, so
+        // per-handler invocation counts can be tracked.
+        foreach (var d in handler.GetInvocationList())
+        {
+            _eventInvocations.Add((eventName, d));
+            d.DynamicInvoke(args);
+        }
     }
 
     public int EventSubscriberCount(string eventName)
         => _eventHandlers.TryGetValue(eventName, out var handler) && handler is not null
             ? handler.GetInvocationList().Length
             : 0;
+
+    public void VerifyEventSubscribed(string eventName, Delegate? handler, Times times)
+        => VerifyEventCount(eventName, handler, times, _eventSubscribes, "Subscribed");
+
+    public void VerifyEventUnsubscribed(string eventName, Delegate? handler, Times times)
+        => VerifyEventCount(eventName, handler, times, _eventUnsubscribes, "Unsubscribed");
+
+    public void VerifyEventHandlerInvoked(string eventName, Delegate? handler, Times times)
+    {
+        int count = _eventInvocations.Count(x => x.Event == eventName && (handler is null || Equals(x.Handler, handler)));
+        if (!times.IsMatch(count))
+            throw new VerificationException(
+                $"Verify failed: event {eventName} HandlerInvoked - {times.Describe(count)}.");
+    }
+
+    private static void VerifyEventCount(
+        string eventName, Delegate? handler, Times times,
+        List<(string Event, Delegate? Handler)> log, string what)
+    {
+        int count = log.Count(x => x.Event == eventName && (handler is null || Equals(x.Handler, handler)));
+        if (!times.IsMatch(count))
+            throw new VerificationException(
+                $"Verify failed: event {eventName} {what} - {times.Describe(count)}.");
+    }
 
     public SetupEntry AddSetup(string methodName, Type[]? typeArgs, IMatcher[] matchers)
     {
