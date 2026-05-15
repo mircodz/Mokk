@@ -12,6 +12,8 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IMessage<,>))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IBox<>))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractCache<,>))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IParser))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractRefSink))]
 
 namespace Mokk.Tests;
 
@@ -82,6 +84,18 @@ public abstract class AbstractCache<TKey, TValue> where TKey : notnull
 {
     public abstract TValue Load(TKey key);
     public virtual bool Has(TKey key) => false;
+}
+
+public interface IParser
+{
+    bool TryParse(string text, out int value);
+    void Increment(ref int counter);
+    int Sum(in int a, in int b);
+}
+
+public abstract class AbstractRefSink
+{
+    public abstract bool TryTake(out int value);
 }
 
 // Real implementation used by wrapping tests
