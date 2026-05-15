@@ -78,6 +78,31 @@ mock.DoSomething<string>(Any).Returns("hello");
 mock.DoSomething<AnyType>(Any).Callback(() => count++); // matches any T
 ```
 
+## Generic types
+
+Register the open (unbound) generic and close it at the use site:
+
+```csharp
+public interface IMessage<TKey, TValue>
+{
+    TValue Get(TKey key);
+    void Put(TKey key, TValue value);
+}
+
+[assembly: GenerateMock(typeof(IMessage<,>))]   // unbound
+// typeof(IMessage<string,int>) also works — it's collapsed to the open form
+
+var mock = new MockMessage<string, int>();
+mock.Get("answer").Returns(42);
+Assert.Equal(42, mock.Instance.Get("answer"));
+```
+
+Type-parameter constraints (`where T : class, new()`, `notnull`, etc.) are
+carried onto the generated mock. The same base name at different arities can
+all be registered in one assembly — `IMessage`, `IMessage<T>` and
+`IMessage<TKey,TValue>` become `MockMessage`, `MockMessage<T>` and
+`MockMessage<TKey,TValue>`, distinguished by generic arity like any C# type.
+
 ## Properties
 
 ```csharp

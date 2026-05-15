@@ -40,7 +40,9 @@ public class MockGenerator : IIncrementalGenerator
                 && attr.ConstructorArguments[0].Value is INamedTypeSymbol symbol
                 && (symbol.TypeKind == TypeKind.Interface || (symbol.TypeKind == TypeKind.Class && symbol.IsAbstract)))
             {
-                builder.Add(symbol);
+                // Collapse typeof(IMessage<,>) (unbound) and typeof(IMessage<string,string>)
+                // (closed) to the same open generic definition: IMessage<T, U>.
+                builder.Add(symbol.OriginalDefinition);
             }
         }
         return builder.ToImmutable();
@@ -54,6 +56,7 @@ public class MockGenerator : IIncrementalGenerator
             : interfaceSymbol.ContainingNamespace.ToDisplayString();
 
         var mockClassName = GetMockClassName(interfaceName);
+        var generics = GetGenericInfo(interfaceSymbol);
         var qualifiedInterface = interfaceSymbol.ToDisplayString(TypeFormat);
         var members = CollectMembers(interfaceSymbol);
 
@@ -72,9 +75,11 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitMockClass(sb, mockClassName, qualifiedInterface, members);
+        EmitMockClass(sb, mockClassName, qualifiedInterface, members, generics);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
+        if (generics.Arity > 0)
+            fileName += $"_{generics.Arity}";
         context.AddSource($"{fileName}.g.cs", sb.ToString());
     }
 
@@ -89,6 +94,44 @@ public class MockGenerator : IIncrementalGenerator
         else
             baseName = typeName;
         return $"Mock{baseName}";
+    }
+
+    private readonly struct GenericInfo(string typeParams, string constraints, int arity)
+    {
+        public string TypeParams { get; } = typeParams;   // "<T, U>" or ""
+        public string Constraints { get; } = constraints;  // " where T : class ..." or ""
+        public int Arity { get; } = arity;
+    }
+
+    private static GenericInfo GetGenericInfo(INamedTypeSymbol symbol)
+    {
+        var tps = symbol.TypeParameters;
+        if (tps.Length == 0)
+            return new GenericInfo("", "", 0);
+
+        var typeParams = $"<{string.Join(", ", tps.Select(tp => tp.Name))}>";
+
+        var clauses = new StringBuilder();
+        foreach (var tp in tps)
+        {
+            var parts = new List<string>();
+
+            if (tp.HasReferenceTypeConstraint) parts.Add("class");
+            else if (tp.HasUnmanagedTypeConstraint) parts.Add("unmanaged");
+            else if (tp.HasValueTypeConstraint) parts.Add("struct");
+            else if (tp.HasNotNullConstraint) parts.Add("notnull");
+
+            foreach (var ct in tp.ConstraintTypes)
+                parts.Add(ct.ToDisplayString(TypeFormat));
+
+            if (tp.HasConstructorConstraint && !tp.HasValueTypeConstraint && !tp.HasUnmanagedTypeConstraint)
+                parts.Add("new()");
+
+            if (parts.Count > 0)
+                clauses.Append($" where {tp.Name} : {string.Join(", ", parts)}");
+        }
+
+        return new GenericInfo(typeParams, clauses.ToString(), tps.Length);
     }
 
     private static MemberCollection CollectMembers(INamedTypeSymbol interfaceSymbol)
@@ -156,9 +199,9 @@ public class MockGenerator : IIncrementalGenerator
     }
 
     private static void EmitMockClass(
-        StringBuilder sb, string className, string qualifiedInterface, MemberCollection members)
+        StringBuilder sb, string className, string qualifiedInterface, MemberCollection members, GenericInfo generics)
     {
-        sb.AppendLine($"public sealed class {className}");
+        sb.AppendLine($"public sealed class {className}{generics.TypeParams}{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine($"    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    private readonly __Instance _inner;");
@@ -320,6 +363,7 @@ public class MockGenerator : IIncrementalGenerator
             : classSymbol.ContainingNamespace.ToDisplayString();
 
         var mockClassName = GetMockClassName(className);
+        var generics = GetGenericInfo(classSymbol);
         var qualifiedClass = classSymbol.ToDisplayString(TypeFormat);
         var members = CollectAbstractClassMembers(classSymbol);
 
@@ -338,9 +382,11 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members);
+        EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members, generics);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
+        if (generics.Arity > 0)
+            fileName += $"_{generics.Arity}";
         context.AddSource($"{fileName}.g.cs", sb.ToString());
     }
 
@@ -392,9 +438,9 @@ public class MockGenerator : IIncrementalGenerator
     }
 
     private static void EmitAbstractClassMock(
-        StringBuilder sb, string className, string qualifiedClass, MemberCollection members)
+        StringBuilder sb, string className, string qualifiedClass, MemberCollection members, GenericInfo generics)
     {
-        sb.AppendLine($"public sealed class {className} : {qualifiedClass}");
+        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : {qualifiedClass}{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    public {qualifiedClass} Instance => this;");

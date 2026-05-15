@@ -7,6 +7,11 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IExtendedService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.ITemplatedService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractNotificationService))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IMessage))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IMessage<>))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IMessage<,>))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IBox<>))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractCache<,>))]
 
 namespace Mokk.Tests;
 
@@ -46,6 +51,40 @@ public interface IExtendedService : IBaseService
 public interface ITemplatedService
 {
     T DoSomething<T>(T value);
+}
+
+// Same base name, three different arities, all mocked in one assembly.
+public interface IMessage
+{
+    string Describe();
+}
+
+public interface IMessage<T>
+{
+    T Echo(T value);
+}
+
+// Open generic interface: registered as typeof(IMessage<,>)
+public interface IMessage<TKey, TValue>
+{
+    TValue Get(TKey key);
+    void Put(TKey key, TValue value);
+    TKey LastKey { get; set; }
+    event System.Action<TKey, TValue> Updated;
+}
+
+// Generic interface with constraints, registered as typeof(IBox<>)
+public interface IBox<T> where T : class, new()
+{
+    T Create();
+    bool Contains(T item);
+}
+
+// Open generic abstract class: registered as typeof(AbstractCache<,>)
+public abstract class AbstractCache<TKey, TValue> where TKey : notnull
+{
+    public abstract TValue Load(TKey key);
+    public virtual bool Has(TKey key) => false;
 }
 
 // Real implementation used by wrapping tests
