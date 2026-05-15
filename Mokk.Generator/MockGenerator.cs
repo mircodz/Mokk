@@ -292,11 +292,12 @@ public class MockGenerator : IIncrementalGenerator
     private static void EmitMockClass(
         StringBuilder sb, string className, string qualifiedInterface, MemberCollection members, GenericInfo generics)
     {
-        sb.AppendLine($"public sealed class {className}{generics.TypeParams}{generics.Constraints}");
+        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine($"    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    private readonly __Instance _inner;");
         sb.AppendLine($"    public {qualifiedInterface} Instance => _inner;");
+        sb.AppendLine($"    global::Mokk.MockInterceptor global::Mokk.IMockObject.Interceptor => _interceptor;");
         sb.AppendLine();
         sb.AppendLine($"    public {className}(bool strict = false, {qualifiedInterface}? wrapping = null, System.Action<string>? onUnusedSetup = null)");
         sb.AppendLine($"    {{");
@@ -504,10 +505,11 @@ public class MockGenerator : IIncrementalGenerator
     private static void EmitAbstractClassMock(
         StringBuilder sb, string className, string qualifiedClass, MemberCollection members, GenericInfo generics)
     {
-        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : {qualifiedClass}{generics.Constraints}");
+        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : {qualifiedClass}, global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    public {qualifiedClass} Instance => this;");
+        sb.AppendLine($"    global::Mokk.MockInterceptor global::Mokk.IMockObject.Interceptor => _interceptor;");
         sb.AppendLine();
         sb.AppendLine($"    public {className}(bool strict = false, System.Action<string>? onUnusedSetup = null) : base()");
         sb.AppendLine($"        => _interceptor = new(strict, null, typeof({qualifiedClass}), onUnusedSetup);");

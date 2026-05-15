@@ -10,6 +10,7 @@ public interface ICallSpec
     string Method { get; }
     Type[]? TypeArgs { get; }
     IMatcher[] Matchers { get; }
+    MockInterceptor Owner { get; }
 }
 
 public sealed class MethodHandle<TReturn> : ICallSpec
@@ -31,6 +32,7 @@ public sealed class MethodHandle<TReturn> : ICallSpec
     string ICallSpec.Method => _method;
     Type[]? ICallSpec.TypeArgs => _typeArgs;
     IMatcher[] ICallSpec.Matchers => _matchers;
+    MockInterceptor ICallSpec.Owner => _interceptor;
 
     private SetupEntry Entry => _entry ??= _interceptor.AddSetup(_method, _typeArgs, _matchers);
 
@@ -83,6 +85,7 @@ public sealed class VoidMethodHandle : ICallSpec
     string ICallSpec.Method => _method;
     Type[]? ICallSpec.TypeArgs => _typeArgs;
     IMatcher[] ICallSpec.Matchers => _matchers;
+    MockInterceptor ICallSpec.Owner => _interceptor;
 
     private SetupEntry Entry => _entry ??= _interceptor.AddSetup(_method, _typeArgs, _matchers);
 

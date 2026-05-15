@@ -25,6 +25,9 @@ public class SetupEntry(string methodName, Type[]? typeArgs, IMatcher[] matchers
 
 public class MockInterceptor(bool strict = false, object? wrapping = null, Type? wrappingType = null, Action<string>? onUnusedSetup = null)
 {
+    private MockSession? _session;
+    internal void UseSession(MockSession session) => _session = session;
+
     private readonly List<SetupEntry> _setups = [];
     private readonly List<(string Method, Type[]? TypeArgs, object?[] Args)> _calls = [];
     private readonly HashSet<int> _verifiedCallIndices = [];
@@ -130,6 +133,7 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     public TReturn Intercept<TReturn>(string methodName, Type[]? typeArgs, object?[] args)
     {
         _calls.Add((methodName, typeArgs, args));
+        _session?.Record(this, methodName, typeArgs, args);
 
         var setup = _setups.LastOrDefault(s => s.IsMatch(methodName, typeArgs, args));
 
@@ -174,6 +178,7 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     public void InterceptVoid(string methodName, Type[]? typeArgs, object?[] args)
     {
         _calls.Add((methodName, typeArgs, args));
+        _session?.Record(this, methodName, typeArgs, args);
 
         var setup = _setups.LastOrDefault(s => s.IsMatch(methodName, typeArgs, args));
 
@@ -280,10 +285,15 @@ public class MockInterceptor(bool strict = false, object? wrapping = null, Type?
     private static bool CallMatches(
         (string Method, Type[]? TypeArgs, object?[] Args) call,
         string methodName, Type[]? typeArgs, IMatcher[] matchers)
-        => call.Method == methodName
-        && TypeArgsMatch(typeArgs, call.TypeArgs)
-        && matchers.Length == call.Args.Length
-        && matchers.Zip(call.Args).All(p => p.First.Matches(p.Second));
+        => CallMatches(call.Method, call.TypeArgs, call.Args, methodName, typeArgs, matchers);
+
+    internal static bool CallMatches(
+        string callMethod, Type[]? callTypeArgs, object?[] callArgs,
+        string methodName, Type[]? typeArgs, IMatcher[] matchers)
+        => callMethod == methodName
+        && TypeArgsMatch(typeArgs, callTypeArgs)
+        && matchers.Length == callArgs.Length
+        && matchers.Zip(callArgs).All(p => p.First.Matches(p.Second));
 
     private TReturn InvokeOnWrapping<TReturn>(string methodName, Type[]? typeArgs, object?[] args)
         => (TReturn)FindWrappingMethod(methodName, typeArgs, args).Invoke(wrapping, args)!;

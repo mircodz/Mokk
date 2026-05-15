@@ -1,5 +1,11 @@
 # Mokk
 
+<div align="center">
+    <img src="https://count.getloli.com/get/@mircodz-mokk?theme=asoul&padding=3" /><br>
+</div>
+
+## Introduction
+
 C# mocking library powered by Roslyn source generators.
 
 ## Installation
@@ -169,6 +175,23 @@ mock.VerifyInOrder(
     mock.Login(Any),
     mock.GetUser(Any),
     mock.Logout()
+);
+```
+
+## VerifyInOrder across mocks
+
+A `MockSession` records calls across multiple mocks on one timeline, so order
+can be asserted across mock boundaries:
+
+```csharp
+var session = new MockSession(auth, audit);
+
+sut.Run();
+
+session.VerifyInOrder(
+    auth.Login(Any),
+    audit.Write(Any),
+    auth.Logout()
 );
 ```
 
