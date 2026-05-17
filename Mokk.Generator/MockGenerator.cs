@@ -221,11 +221,11 @@ public class MockGenerator : IIncrementalGenerator
         return new MemberCollection(methods, properties, events, indexers, forwards);
     }
 
-    private static string ParamTypeCsv(IEnumerable<IParameterSymbol> ps)
+    private static string FormatParamType(IEnumerable<IParameterSymbol> ps)
         => string.Join(",", ps.Select(p => p.Type.ToDisplayString(TypeFormat)));
 
     private static string MethodSignatureKey(IMethodSymbol m)
-        => $"{m.Name}({ParamTypeCsv(m.Parameters)})";
+        => $"{m.Name}({FormatParamType(m.Parameters)})";
 
     // True when a value of type `from` can satisfy a `to` return slot, i.e.
     // `from` is `to`, derives from it, or implements it.
@@ -244,7 +244,7 @@ public class MockGenerator : IIncrementalGenerator
     // Indexers all share the name "this[]", so dedupe across the inheritance
     // chain by parameter types (overloaded indexers are kept separate).
     private static string IndexerKey(IPropertySymbol s)
-        => $"i:({ParamTypeCsv(s.Parameters)})";
+        => $"i:({FormatParamType(s.Parameters)})";
 
     private static void EmitVerifyInOrder(StringBuilder sb, string interceptorRef, string indent)
     {
