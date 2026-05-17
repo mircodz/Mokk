@@ -14,6 +14,9 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractCache<,>))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IParser))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractRefSink))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IInventory))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IGrid))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractLookup))]
 
 namespace Mokk.Tests;
 
@@ -103,6 +106,27 @@ public interface IParser
 public abstract class AbstractRefSink
 {
     public abstract bool TryTake(out int value);
+}
+
+// Settable single-arg indexer alongside a normal property, and derives the
+// whole IReadOnlyList<T> chain (IReadOnlyCollection<T>, IEnumerable<T>,
+// IEnumerable) the way real collection interfaces do.
+public interface IInventory : System.Collections.Generic.IReadOnlyList<int>
+{
+    int this[string sku] { get; set; }
+}
+
+// Read-only multi-parameter indexer.
+public interface IGrid
+{
+    string this[int row, int col] { get; }
+}
+
+// Abstract class with a virtual indexer to exercise the override path.
+public abstract class AbstractLookup
+{
+    public abstract string this[int id] { get; set; }
+    public virtual int Capacity => 0;
 }
 
 // Real implementation used by wrapping tests

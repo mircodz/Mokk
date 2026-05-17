@@ -149,6 +149,9 @@ public class MockGenerator : IIncrementalGenerator
         var methods = new List<MethodModel>();
         var properties = new List<PropertyModel>();
         var events = new List<EventModel>();
+        var indexers = new List<IndexerModel>();
+        var forwards = new List<ExplicitForwardModel>();
+        var rawMethods = new List<IMethodSymbol>();
         var seen = new HashSet<string>();
 
         void Process(INamedTypeSymbol iface)
@@ -159,10 +162,14 @@ public class MockGenerator : IIncrementalGenerator
                 {
                     case IMethodSymbol { MethodKind: MethodKind.Ordinary } method:
                     {
-                        var key = $"m:{method.Name}({string.Join(",", method.Parameters.Select(p => p.Type.ToDisplayString(TypeFormat)))})";
-                        if (seen.Add(key))
+                        rawMethods.Add(method);
+                        break;
+                    }
+                    case IPropertySymbol { IsIndexer: true } indexer:
+                    {
+                        if (seen.Add(IndexerKey(indexer)))
                         {
-                            methods.Add(MethodModel.From(method));
+                            indexers.Add(IndexerModel.From(indexer));
                         }
 
                         break;
@@ -193,8 +200,51 @@ public class MockGenerator : IIncrementalGenerator
         foreach (var baseInterface in interfaceSymbol.AllInterfaces)
             Process(baseInterface);
 
-        return new MemberCollection(methods, properties, events);
+        // Methods that share a name and parameters but differ in return type
+        // (the IEnumerable<T> / IEnumerable.GetEnumerator pair) can't all be
+        // implemented implicitly: C# binds one implicit method to one slot, so
+        // the most-derived return becomes the real method and every other slot
+        // gets an explicit interface implementation that just forwards to it.
+        foreach (var group in rawMethods.GroupBy(MethodSignatureKey))
+        {
+            var siblings = group.ToList();
+            var primary = siblings.FirstOrDefault(c =>
+                siblings.All(o => ReturnAssignable(c.ReturnType, o.ReturnType))) ?? siblings[0];
+            methods.Add(MethodModel.From(primary));
+
+            foreach (var sibling in siblings)
+                if (!SymbolEqualityComparer.Default.Equals(sibling.ReturnType, primary.ReturnType)
+                    && ReturnAssignable(primary.ReturnType, sibling.ReturnType))
+                    forwards.Add(ExplicitForwardModel.From(sibling));
+        }
+
+        return new MemberCollection(methods, properties, events, indexers, forwards);
     }
+
+    private static string ParamTypeCsv(IEnumerable<IParameterSymbol> ps)
+        => string.Join(",", ps.Select(p => p.Type.ToDisplayString(TypeFormat)));
+
+    private static string MethodSignatureKey(IMethodSymbol m)
+        => $"{m.Name}({ParamTypeCsv(m.Parameters)})";
+
+    // True when a value of type `from` can satisfy a `to` return slot, i.e.
+    // `from` is `to`, derives from it, or implements it.
+    private static bool ReturnAssignable(ITypeSymbol from, ITypeSymbol to)
+    {
+        if (SymbolEqualityComparer.Default.Equals(from, to))
+            return true;
+        if (from.AllInterfaces.Contains(to, SymbolEqualityComparer.Default))
+            return true;
+        for (var b = from.BaseType; b is not null; b = b.BaseType)
+            if (SymbolEqualityComparer.Default.Equals(b, to))
+                return true;
+        return false;
+    }
+
+    // Indexers all share the name "this[]", so dedupe across the inheritance
+    // chain by parameter types (overloaded indexers are kept separate).
+    private static string IndexerKey(IPropertySymbol s)
+        => $"i:({ParamTypeCsv(s.Parameters)})";
 
     private static void EmitVerifyInOrder(StringBuilder sb, string interceptorRef, string indent)
     {
@@ -210,13 +260,16 @@ public class MockGenerator : IIncrementalGenerator
 
     // Setup-handle parameters: out params are produced by the mock, not matched,
     // so they're dropped from the handle signature and treated as wildcards.
-    private static string HandleMatcherParams(MethodModel m)
-        => string.Join(", ", m.Parameters.Where(p => !p.IsOut).Select(p => $"Matcher<{p.Type}> {p.Name}"));
+    private static string MatcherParamList(IReadOnlyList<ParameterModel> ps)
+        => string.Join(", ", ps.Where(p => !p.IsOut).Select(p => $"Matcher<{p.Type}> {p.Name}"));
 
-    private static string HandleMatchersExpr(MethodModel m)
-        => m.Parameters.Count == 0
+    private static string MatcherArrayExpr(IReadOnlyList<ParameterModel> ps)
+        => ps.Count == 0
             ? "Array.Empty<IMatcher>()"
-            : $"new IMatcher[] {{ {string.Join(", ", m.Parameters.Select(p => p.IsOut ? $"Matcher<{p.Type}>.Any.Inner" : $"{p.Name}.Inner"))} }}";
+            : $"new IMatcher[] {{ {string.Join(", ", ps.Select(p => p.IsOut ? $"Matcher<{p.Type}>.Any.Inner" : $"{p.Name}.Inner"))} }}";
+
+    private static string HandleMatcherParams(MethodModel m) => MatcherParamList(m.Parameters);
+    private static string HandleMatchersExpr(MethodModel m) => MatcherArrayExpr(m.Parameters);
 
     private static string TypeArgsExpr(MethodModel m)
         => m.TypeParameterNames.Count > 0
@@ -225,6 +278,33 @@ public class MockGenerator : IIncrementalGenerator
 
     private static string TypeParamList(MethodModel m)
         => m.TypeParameterNames.Count > 0 ? $"<{string.Join(", ", m.TypeParameterNames)}>" : "";
+
+    // Setup accessor: `Indexer(Matcher<int> i)` → IndexerHandle keyed on the
+    // indexer's metadata name. Emitted on the mock for both interfaces and
+    // abstract classes (a method, so it never clashes with an overridden
+    // `this[...]` the way a property handle would clash with its property).
+    private static void EmitIndexerSetupAccessor(StringBuilder sb, string indent, IndexerModel x)
+    {
+        sb.AppendLine($"{indent}public IndexerHandle<{x.ValueType}> Indexer({MatcherParamList(x.Parameters)})");
+        sb.AppendLine($"{indent}    => new(_interceptor, \"{x.MetadataName}\", {MatcherArrayExpr(x.Parameters)});");
+        sb.AppendLine();
+    }
+
+    // The real `this[...]` member that satisfies the interface/base type,
+    // forwarding to the interceptor as get_/set_<MetadataName>.
+    private static void EmitIndexerImpl(StringBuilder sb, string indent, string prefix, IndexerModel x)
+    {
+        var sig = string.Join(", ", x.Parameters.Select(p => $"{p.Type} {p.Name}"));
+        var indexArgs = string.Join(", ", x.Parameters.Select(p => p.Name));
+        sb.AppendLine($"{indent}{prefix} {x.ValueType} this[{sig}]");
+        sb.AppendLine($"{indent}{{");
+        if (x.HasGetter)
+            sb.AppendLine($"{indent}    get => _interceptor.Intercept<{x.ValueType}>(\"get_{x.MetadataName}\", null, new object?[] {{ {indexArgs} }});");
+        if (x.HasSetter)
+            sb.AppendLine($"{indent}    set => _interceptor.InterceptVoid(\"set_{x.MetadataName}\", null, new object?[] {{ {indexArgs}, value }});");
+        sb.AppendLine($"{indent}}}");
+        sb.AppendLine();
+    }
 
     // Emits a method that forwards to the interceptor. ref/out parameters require a
     // statement body so their values can be copied back from the (possibly mutated)
@@ -342,6 +422,9 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var x in members.Indexers)
+            EmitIndexerSetupAccessor(sb, "    ", x);
+
         EmitVerifyInOrder(sb, "_interceptor", indent: "    ");
         sb.AppendLine();
         EmitInstanceClass(sb, qualifiedInterface, members, indent: "    ");
@@ -415,6 +498,19 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var x in members.Indexers)
+            EmitIndexerImpl(sb, ii, "public", x);
+
+        // Explicitly implement covariant-return siblings (e.g. the non-generic
+        // IEnumerable.GetEnumerator) by forwarding to the implicit method.
+        foreach (var f in members.ExplicitForwards)
+        {
+            var sig = string.Join(", ", f.Parameters.Select(p => $"{p.Modifier}{p.Type} {p.Name}"));
+            var args = string.Join(", ", f.Parameters.Select(p => $"{p.Modifier}{p.Name}"));
+            sb.AppendLine($"{ii}{f.ReturnType} {f.InterfaceType}.{f.Name}({sig}) => this.{f.Name}({args});");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"{i}}}");
     }
 
@@ -460,6 +556,7 @@ public class MockGenerator : IIncrementalGenerator
         var methods = new List<MethodModel>();
         var properties = new List<PropertyModel>();
         var events = new List<EventModel>();
+        var indexers = new List<IndexerModel>();
         var seen = new HashSet<string>();
 
         INamedTypeSymbol? current = classSymbol;
@@ -476,6 +573,14 @@ public class MockGenerator : IIncrementalGenerator
                         var key = $"m:{method.Name}({string.Join(",", method.Parameters.Select(p => p.Type.ToDisplayString(TypeFormat)))})";
                         if (seen.Add(key))
                             methods.Add(MethodModel.From(method));
+                        break;
+                    }
+                    case IPropertySymbol { IsIndexer: true } indexer
+                        when (indexer.IsAbstract || indexer.IsVirtual)
+                          && indexer.DeclaredAccessibility != Accessibility.Private:
+                    {
+                        if (seen.Add(IndexerKey(indexer)))
+                            indexers.Add(IndexerModel.From(indexer));
                         break;
                     }
                     case IPropertySymbol prop
@@ -499,7 +604,7 @@ public class MockGenerator : IIncrementalGenerator
             current = current.BaseType;
         }
 
-        return new MemberCollection(methods, properties, events);
+        return new MemberCollection(methods, properties, events, indexers);
     }
 
     private static void EmitAbstractClassMock(
@@ -560,6 +665,9 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        foreach (var x in members.Indexers)
+            EmitIndexerImpl(sb, "    ", $"{(x.IsProtected ? "protected" : "public")} override", x);
+
         EmitAbstractClassShortcuts(sb, "_interceptor", members, indent: "    ");
         EmitVerifyInOrder(sb, "_interceptor", indent: "    ");
         sb.AppendLine("}");
@@ -607,13 +715,23 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine($"{i}public EventHandle {e.Name}Handle => new({interceptorRef}, \"{e.Name}\");");
             sb.AppendLine();
         }
+
+        // The indexer setup accessor is a method named `Indexer`, so unlike
+        // property handles it doesn't collide with the overridden `this[...]`.
+        foreach (var x in members.Indexers)
+            EmitIndexerSetupAccessor(sb, i, x);
     }
 
-    private class MemberCollection(List<MethodModel> methods, List<PropertyModel> properties, List<EventModel> events)
+    private class MemberCollection(
+        List<MethodModel> methods, List<PropertyModel> properties,
+        List<EventModel> events, List<IndexerModel> indexers,
+        List<ExplicitForwardModel>? forwards = null)
     {
         public List<MethodModel> Methods { get; } = methods;
         public List<PropertyModel> Properties { get; } = properties;
         public List<EventModel> Events { get; } = events;
+        public List<IndexerModel> Indexers { get; } = indexers;
+        public List<ExplicitForwardModel> ExplicitForwards { get; } = forwards ?? new();
     }
 
     private class MethodModel
@@ -697,6 +815,48 @@ public class MockGenerator : IIncrementalGenerator
             Name = s.Name,
             HandlerType = s.Type.ToDisplayString(TypeFormat),
             IsProtected = IsProtectedAccess(s),
+        };
+    }
+
+    // An indexer is an IPropertySymbol with IsIndexer == true. Its accessors are
+    // emitted as get_/set_<MetadataName> ("Item" by default), so it behaves like
+    // a method pair whose arguments are the index parameters.
+    private class IndexerModel
+    {
+        public string MetadataName { get; private set; } = "Item";
+        public string ValueType { get; private set; } = "";
+        public bool HasGetter { get; private set; }
+        public bool HasSetter { get; private set; }
+        public bool IsProtected { get; private set; }
+        public List<ParameterModel> Parameters { get; private set; } = new();
+
+        public static IndexerModel From(IPropertySymbol s) => new()
+        {
+            MetadataName = s.MetadataName,
+            ValueType = s.Type.ToDisplayString(TypeFormat),
+            HasGetter = !s.IsWriteOnly,
+            HasSetter = !s.IsReadOnly,
+            IsProtected = IsProtectedAccess(s),
+            Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
+        };
+    }
+
+    // A method shadowed by a covariant-return collision, implemented explicitly
+    // and forwarded to the implicit (most-derived) sibling so both interface
+    // slots are satisfied with one interception point.
+    private class ExplicitForwardModel
+    {
+        public string InterfaceType { get; private set; } = "";
+        public string ReturnType { get; private set; } = "";
+        public string Name { get; private set; } = "";
+        public List<ParameterModel> Parameters { get; private set; } = new();
+
+        public static ExplicitForwardModel From(IMethodSymbol s) => new()
+        {
+            InterfaceType = s.ContainingType.ToDisplayString(TypeFormat),
+            ReturnType = s.ReturnType.ToDisplayString(TypeFormat),
+            Name = s.Name,
+            Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
         };
     }
 }
