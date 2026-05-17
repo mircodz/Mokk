@@ -570,8 +570,7 @@ public class MockGenerator : IIncrementalGenerator
                         when (method.IsAbstract || method.IsVirtual)
                           && method.DeclaredAccessibility != Accessibility.Private:
                     {
-                        var key = $"m:{method.Name}({string.Join(",", method.Parameters.Select(p => p.Type.ToDisplayString(TypeFormat)))})";
-                        if (seen.Add(key))
+                        if (seen.Add("m:" + MethodSignatureKey(method)))
                             methods.Add(MethodModel.From(method));
                         break;
                     }
