@@ -19,6 +19,9 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IInventory))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IGrid))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractLookup))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IInitOnly))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IRefReturn))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractSeeded))]
 
 namespace Mokk.Tests;
 
@@ -142,6 +145,29 @@ public abstract class AbstractLookup
 {
     public abstract string this[int id] { get; set; }
     public virtual int Capacity => 0;
+}
+
+public interface IInitOnly
+{
+    int Id { get; init; }
+    string Name { get; init; }
+}
+
+// Mix of ref / ref readonly returns and a normal method: the ref members get
+// throwing stubs, the normal one stays fully mockable.
+public interface IRefReturn
+{
+    ref int Slot();
+    ref readonly int Peek();
+    int Normal(int x);
+}
+
+// No accessible parameterless constructor: the mock must chain to base(int).
+public abstract class AbstractSeeded
+{
+    protected AbstractSeeded(int seed) => Seed = seed;
+    public int Seed { get; }
+    public abstract int Next(int step);
 }
 
 // Real implementation used by wrapping tests

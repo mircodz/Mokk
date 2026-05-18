@@ -89,4 +89,16 @@ public class RefOutInTests
         Assert.True(ok);
         Assert.Equal(7, v);
     }
+
+    [Fact]
+    public void Ref_returning_members_throw_but_dont_break_the_rest_of_the_mock()
+    {
+        var mock = new MockRefReturn();
+        mock.Normal(7).Returns(70);
+
+        Assert.Equal(70, mock.Instance.Normal(7));   // rest of the mock still works
+
+        Assert.Throws<System.NotSupportedException>(() => mock.Instance.Slot());
+        Assert.Throws<System.NotSupportedException>(() => mock.Instance.Peek());
+    }
 }

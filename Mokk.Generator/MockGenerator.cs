@@ -14,6 +14,23 @@ public class MockGenerator : IIncrementalGenerator
     private static readonly SymbolDisplayFormat TypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
         .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted);
 
+    // Static abstract/virtual members exist only on the type, not an instance,
+    // so an interceptor-backed mock can't implement them (and the mock type
+    // can't satisfy the consumer's generic constraint either).
+    private static readonly DiagnosticDescriptor StaticAbstractUnsupported = new(
+        id: "MOKK001",
+        title: "Static abstract members cannot be mocked",
+        messageFormat: "'{0}' declares static abstract/virtual member(s)",
+        category: "Mokk",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    private static bool HasStaticAbstractMember(INamedTypeSymbol iface)
+        => iface.GetMembers()
+            .Concat(iface.AllInterfaces.SelectMany(i => i.GetMembers()))
+            .Any(m => m.IsStatic && (m.IsAbstract || m.IsVirtual)
+                      && m is IMethodSymbol or IPropertySymbol or IEventSymbol);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var allTargets = context.SyntaxProvider
@@ -58,6 +75,13 @@ public class MockGenerator : IIncrementalGenerator
 
     private static void Execute(SourceProductionContext context, INamedTypeSymbol interfaceSymbol, bool emitFactory)
     {
+        if (HasStaticAbstractMember(interfaceSymbol))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                StaticAbstractUnsupported, interfaceSymbol.Locations.FirstOrDefault(), interfaceSymbol.Name));
+            return;
+        }
+
         var interfaceName = interfaceSymbol.Name;
         var ns = interfaceSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -328,6 +352,17 @@ public class MockGenerator : IIncrementalGenerator
             : "Array.Empty<object?>()";
         var ret = m.IsVoid ? "void" : m.ReturnType;
 
+        // A by-ref return must hand back a ref to real storage; interception
+        // returns by value, so there's nothing to ref. Emit a compiling stub
+        // (the rest of the mock stays usable) that throws if actually called.
+        if (m.ReturnRefKind.Length > 0)
+        {
+            sb.AppendLine($"{indent}{prefix} {m.ReturnRefKind}{ret} {m.Name}{typeParams}({sig}){constraints}");
+            sb.AppendLine($"{indent}    => throw new System.NotSupportedException(\"Mokk cannot mock ref-returning member '{m.Name}'.\");");
+            sb.AppendLine();
+            return;
+        }
+
         if (!m.Parameters.Any(p => p.WritesBack))
         {
             sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig}){constraints}");
@@ -487,12 +522,12 @@ public class MockGenerator : IIncrementalGenerator
             if (p.HasGetter)
             {
                 if (p.HasSetter)
-                    sb.AppendLine($"{ii}    get => _backing_{p.Name}_set ? _backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
+                    sb.AppendLine($"{ii}    get => _backing_{p.Name}_set ? ({p.Type})_backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
                 else
                     sb.AppendLine($"{ii}    get => _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
             }
             if (p.HasSetter)
-                sb.AppendLine($"{ii}    set {{ _backing_{p.Name}_set = true; _backing_{p.Name} = value; _interceptor.InterceptVoid(\"set_{p.Name}\", null, new object?[] {{ value }}); }}");
+                sb.AppendLine($"{ii}    {p.SetterKeyword} {{ _backing_{p.Name}_set = true; _backing_{p.Name} = value; _interceptor.InterceptVoid(\"set_{p.Name}\", null, new object?[] {{ value }}); }}");
             sb.AppendLine($"{ii}}}");
             sb.AppendLine();
         }
@@ -550,7 +585,7 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members, generics);
+        EmitAbstractClassMock(sb, mockClassName, classSymbol, qualifiedClass, members, generics);
         if (emitFactory)
             EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false);
 
@@ -616,15 +651,30 @@ public class MockGenerator : IIncrementalGenerator
     }
 
     private static void EmitAbstractClassMock(
-        StringBuilder sb, string className, string qualifiedClass, MemberCollection members, GenericInfo generics)
+        StringBuilder sb, string className, INamedTypeSymbol classSymbol, string qualifiedClass,
+        MemberCollection members, GenericInfo generics)
     {
+        // The mock derives from the abstract class, so its ctor must chain to an
+        // accessible base ctor. With no parameterless one, pick the smallest
+        // accessible ctor and pass defaults (a mock never uses base state).
+        var baseCtor = classSymbol.InstanceConstructors
+            .Where(c => c.DeclaredAccessibility is Accessibility.Public
+                                                or Accessibility.Protected
+                                                or Accessibility.ProtectedOrInternal
+                        && !c.Parameters.Any(p => p.RefKind is RefKind.Out or RefKind.Ref))
+            .OrderBy(c => c.Parameters.Length)
+            .FirstOrDefault();
+        var baseArgs = baseCtor is null || baseCtor.Parameters.Length == 0
+            ? ""
+            : string.Join(", ", baseCtor.Parameters.Select(p => $"default({p.Type.ToDisplayString(TypeFormat)})!"));
+
         sb.AppendLine($"public sealed class {className}{generics.TypeParams} : {qualifiedClass}, global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    public {qualifiedClass} Instance => this;");
         sb.AppendLine($"    global::Mokk.MockInterceptor global::Mokk.IMockObject.Interceptor => _interceptor;");
         sb.AppendLine();
-        sb.AppendLine($"    public {className}(bool strict = false, System.Action<string>? onUnusedSetup = null) : base()");
+        sb.AppendLine($"    public {className}(bool strict = false, System.Action<string>? onUnusedSetup = null) : base({baseArgs})");
         sb.AppendLine($"        => _interceptor = new(strict, null, typeof({qualifiedClass}), onUnusedSetup);");
         sb.AppendLine();
         sb.AppendLine("    public void Reset() => _interceptor.Reset();");
@@ -652,7 +702,7 @@ public class MockGenerator : IIncrementalGenerator
             if (p.HasGetter)
             {
                 if (p.HasSetter)
-                    sb.AppendLine($"        get => _backing_{p.Name}_set ? _backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
+                    sb.AppendLine($"        get => _backing_{p.Name}_set ? ({p.Type})_backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
                 else
                     sb.AppendLine($"        get => _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
             }
@@ -751,6 +801,7 @@ public class MockGenerator : IIncrementalGenerator
         public List<ParameterModel> Parameters { get; private set; } = new();
         public List<string> TypeParameterNames { get; private set; } = new();
         public string Constraints { get; private set; } = "";  // " where T : ..." or ""
+        public string ReturnRefKind { get; private set; } = "";  // "", "ref ", "ref readonly "
 
         public static MethodModel From(IMethodSymbol s) => new()
         {
@@ -760,6 +811,7 @@ public class MockGenerator : IIncrementalGenerator
             Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
             TypeParameterNames = s.TypeParameters.Select(tp => tp.Name).ToList(),
             Constraints = FormatConstraints(s.TypeParameters),
+            ReturnRefKind = s.ReturnsByRefReadonly ? "ref readonly " : s.ReturnsByRef ? "ref " : "",
             IsProtected = IsProtectedAccess(s),
         };
     }
@@ -802,7 +854,10 @@ public class MockGenerator : IIncrementalGenerator
         public string Type { get; private set; } = "";
         public bool HasGetter { get; private set; }
         public bool HasSetter { get; private set; }
+        public bool IsInitOnly { get; private set; }
         public bool IsProtected { get; private set; }
+
+        public string SetterKeyword => IsInitOnly ? "init" : "set";
 
         public static PropertyModel From(IPropertySymbol s) => new()
         {
@@ -810,6 +865,7 @@ public class MockGenerator : IIncrementalGenerator
             Type = s.Type.ToDisplayString(TypeFormat),
             HasGetter = !s.IsWriteOnly,
             HasSetter = !s.IsReadOnly,
+            IsInitOnly = s.SetMethod?.IsInitOnly == true,
             IsProtected = IsProtectedAccess(s),
         };
     }

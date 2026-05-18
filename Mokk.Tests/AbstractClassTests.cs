@@ -99,4 +99,14 @@ public class AbstractClassTests
 
         Assert.IsAssignableFrom<IEmailService>(service);
     }
+
+    [Fact]
+    public void Abstract_class_without_parameterless_ctor_is_mockable()
+    {
+        var mock = new MockSeeded();
+        mock.Next(1).Returns(5);
+
+        Assert.Equal(5, mock.Instance.Next(1));
+        Assert.Equal(0, mock.Instance.Seed); // base(int) chained with default
+    }
 }
