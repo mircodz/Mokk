@@ -12,28 +12,21 @@ public interface ICallSpec
     MockInterceptor Owner { get; }
 }
 
-public sealed class MethodHandle<TReturn> : ICallSpec
+public sealed class MethodHandle<TReturn>(
+    MockInterceptor interceptor,
+    string method,
+    Type[]? typeArgs,
+    IMatcher[] matchers)
+    : ICallSpec
 {
-    private readonly MockInterceptor _interceptor;
-    private readonly string _method;
-    private readonly Type[]? _typeArgs;
-    private readonly IMatcher[] _matchers;
     private SetupEntry? _entry;
 
-    public MethodHandle(MockInterceptor interceptor, string method, Type[]? typeArgs, IMatcher[] matchers)
-    {
-        _interceptor = interceptor;
-        _method = method;
-        _typeArgs = typeArgs;
-        _matchers = matchers;
-    }
+    string ICallSpec.Method => method;
+    Type[]? ICallSpec.TypeArgs => typeArgs;
+    IMatcher[] ICallSpec.Matchers => matchers;
+    MockInterceptor ICallSpec.Owner => interceptor;
 
-    string ICallSpec.Method => _method;
-    Type[]? ICallSpec.TypeArgs => _typeArgs;
-    IMatcher[] ICallSpec.Matchers => _matchers;
-    MockInterceptor ICallSpec.Owner => _interceptor;
-
-    private SetupEntry Entry => _entry ??= _interceptor.AddSetup(_method, _typeArgs, _matchers);
+    private SetupEntry Entry => _entry ??= interceptor.AddSetup(method, typeArgs, matchers);
 
     public MethodHandle<TReturn> Returns(TReturn value) { Entry.ReturnFactory = _ => value; return this; }
     public MethodHandle<TReturn> Returns(Func<TReturn> factory) { Entry.ReturnFactory = _ => factory(); return this; }
@@ -58,9 +51,9 @@ public sealed class MethodHandle<TReturn> : ICallSpec
 
     public SequenceSetupBuilder<TReturn> Sequence() => new(Entry);
 
-    public void Verify(Times times) => _interceptor.Verify(_method, _typeArgs, _matchers, times);
+    public void Verify(Times times) => interceptor.Verify(method, typeArgs, matchers, times);
 
     public IReadOnlyList<CallRecord> ReceivedCalls()
-        => _interceptor.GetCalls(_method, _typeArgs, _matchers)
+        => interceptor.GetCalls(method, typeArgs, matchers)
             .Select(c => new CallRecord(c.Args)).ToList();
 }

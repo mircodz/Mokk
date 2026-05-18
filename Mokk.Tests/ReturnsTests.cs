@@ -5,12 +5,10 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Configuring a setup's behaviour: Returns (constant/typed factory), Callback,
-// Throws, and Sequence — for both value-returning and void methods.
 public class ReturnsTests
 {
     [Fact]
-    public void Returns_with_typed_args()
+    public void Returns_With_Typed_Args()
     {
         var mock = new MockEmailService();
         mock.GetTemplate(Any, Any).Returns((string name, int version) => $"{name}-v{version}");
@@ -20,7 +18,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Returns_factory_with_single_arg()
+    public void Returns_Factory_With_Single_Arg()
     {
         var mock = new MockUserRepository();
         mock.GetUserAsync(Any).Returns((int id) => Task.FromResult($"User#{id}"));
@@ -30,7 +28,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Callback_executes_on_each_matched_call()
+    public void Callback_Executes_On_Each_Matched_Call()
     {
         var mock = new MockEmailService();
         var count = 0;
@@ -43,7 +41,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Callback_captures_arguments()
+    public void Callback_Captures_Arguments()
     {
         var mock = new MockEmailService();
         var capturedTo = "";
@@ -55,7 +53,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Throws_a_specific_exception_instance()
+    public void Throws_A_Specific_Exception_Instance()
     {
         var mock = new MockEmailService();
         mock.Send("bad@evil.com", Any).Throws(new InvalidOperationException("Blocked!"));
@@ -66,7 +64,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Throws_a_generic_exception_type()
+    public void Throws_A_Generic_Exception_Type()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Throws<ArgumentException>();
@@ -75,7 +73,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Sequence_returns_values_in_order()
+    public void Sequence_Returns_Values_In_Order()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Sequence()
@@ -89,7 +87,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Sequence_falls_back_to_default_after_exhausted()
+    public void Sequence_Falls_Back_To_Default_After_Exhausted()
     {
         var mock = new MockEmailService();
         mock.GetTemplate(Any, Any).Sequence()
@@ -102,7 +100,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Sequence_can_throw()
+    public void Sequence_Can_Throw()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Sequence()
@@ -114,7 +112,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Void_method_callback_is_invoked()
+    public void Void_Method_Callback_Is_Invoked()
     {
         var mock = new MockUserRepository();
         var invoked = false;
@@ -126,7 +124,7 @@ public class ReturnsTests
     }
 
     [Fact]
-    public void Void_method_throws_on_matched_call()
+    public void Void_Method_Throws_On_Matched_Call()
     {
         var mock = new MockUserRepository();
         mock.Delete(99).Throws(new InvalidOperationException("Cannot delete"));

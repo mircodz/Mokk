@@ -3,11 +3,10 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Cross-mock ordered verification via a shared MockSession.
 public class SessionTests
 {
     [Fact]
-    public void Verifies_call_order_across_mocks()
+    public void Verifies_Call_Order_Across_Mocks()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -26,7 +25,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Fails_when_cross_mock_order_is_wrong()
+    public void Fails_When_Cross_Mock_Order_Is_Wrong()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -43,7 +42,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Allows_unrelated_interleaved_calls_between_steps()
+    public void Allows_Unrelated_Interleaved_Calls_Between_Steps()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -61,7 +60,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Matchers_are_respected_per_step()
+    public void Matchers_Are_Respected_Per_Step()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -85,7 +84,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Untracked_mock_calls_are_not_in_the_timeline()
+    public void Untracked_Mock_Calls_Are_Not_In_The_Timeline()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -102,7 +101,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Track_returns_session_and_can_be_called_after_construction()
+    public void Track_Returns_Session_And_Can_Be_Called_After_Construction()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -115,7 +114,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Reset_clears_the_timeline()
+    public void Reset_Clears_The_Timeline()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();
@@ -130,7 +129,7 @@ public class SessionTests
     }
 
     [Fact]
-    public void Failure_message_prefixes_steps_and_calls_with_mock_type()
+    public void Failure_Message_Prefixes_Steps_And_Calls_With_Mock_Type()
     {
         var email = new MockEmailService();
         var repo = new MockUserRepository();

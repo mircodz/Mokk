@@ -3,11 +3,10 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Mocking abstract classes and interface inheritance.
 public class AbstractClassTests
 {
     [Fact]
-    public void Can_setup_abstract_method_and_call_via_instance()
+    public void Can_Setup_Abstract_Method_And_Call_Via_Instance()
     {
         var mock = new MockNotificationService();
         mock.Notify(Any, Any).Returns(true);
@@ -16,7 +15,7 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Exact_arg_match_on_abstract_method()
+    public void Exact_Arg_Match_On_Abstract_Method()
     {
         var mock = new MockNotificationService();
         mock.GetStatus(1).Returns("active");
@@ -26,7 +25,7 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Can_verify_abstract_method_call()
+    public void Can_Verify_Abstract_Method_Call()
     {
         var mock = new MockNotificationService();
         mock.Notify(Any, Any).Returns(true);
@@ -36,14 +35,14 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Instance_is_the_mock_itself()
+    public void Instance_Is_The_Mock_Itself()
     {
         var mock = new MockNotificationService();
         Assert.Same(mock, mock.Instance);
     }
 
     [Fact]
-    public void Can_setup_virtual_property()
+    public void Can_Setup_Virtual_Property()
     {
         var mock = new MockNotificationService();
         mock.ServiceNameHandle.Getter().Returns("test-service");
@@ -52,7 +51,7 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Protected_abstract_method_is_accessible_via_shortcut()
+    public void Protected_Abstract_Method_Is_Accessible_Via_Shortcut()
     {
         var mock = new MockNotificationService();
         mock.Log(Any); // protected member exposed via the shortcut compiles & works
@@ -60,7 +59,7 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Reset_clears_call_history_on_abstract_mock()
+    public void Reset_Clears_Call_History_On_Abstract_Mock()
     {
         var mock = new MockNotificationService();
         mock.Notify(Any, Any).Returns(true);
@@ -71,7 +70,7 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Mock_implements_base_and_derived_interface_members()
+    public void Mock_Implements_Base_And_Derived_Interface_Members()
     {
         var mock = new MockExtendedService();
         mock.GetName().Returns("TestService");
@@ -82,7 +81,7 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Mock_is_usable_as_its_base_interface()
+    public void Mock_Is_Usable_As_Its_Base_Interface()
     {
         var mock = new MockExtendedService();
         mock.GetName().Returns("Base");
@@ -92,11 +91,21 @@ public class AbstractClassTests
     }
 
     [Fact]
-    public void Interface_instance_implements_the_interface()
+    public void Interface_Instance_Implements_The_Interface()
     {
         var mock = new MockEmailService();
         IEmailService service = mock.Instance;
 
         Assert.IsAssignableFrom<IEmailService>(service);
+    }
+
+    [Fact]
+    public void Abstract_Class_Without_Parameterless_Ctor_Is_Mockable()
+    {
+        var mock = new MockSeeded();
+        mock.Next(1).Returns(5);
+
+        Assert.Equal(5, mock.Instance.Next(1));
+        Assert.Equal(0, mock.Instance.Seed); // base(int) chained with default
     }
 }

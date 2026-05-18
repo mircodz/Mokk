@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class RefOutInTests
 {
     [Fact]
-    public void Out_parameter_is_written_back_from_callback()
+    public void Out_Parameter_Is_Written_Back_From_Callback()
     {
         var mock = new MockParser();
         mock.TryParse("42").Callback(args => args[1] = 42).Returns(true);
@@ -18,7 +18,7 @@ public class RefOutInTests
     }
 
     [Fact]
-    public void Out_parameter_defaults_when_unset()
+    public void Out_Parameter_Defaults_When_Unset()
     {
         var mock = new MockParser();
         mock.TryParse(Any).Returns(false);
@@ -30,7 +30,7 @@ public class RefOutInTests
     }
 
     [Fact]
-    public void Ref_parameter_is_written_back()
+    public void Ref_Parameter_Is_Written_Back()
     {
         var mock = new MockParser();
         mock.Increment(Any).Callback(args => args[0] = (int)args[0]! + 1);
@@ -42,7 +42,7 @@ public class RefOutInTests
     }
 
     [Fact]
-    public void Ref_parameter_input_value_is_matched()
+    public void Ref_Parameter_Input_Value_Is_Matched()
     {
         var mock = new MockParser();
         mock.Increment(10).Callback(args => args[0] = 99);
@@ -57,7 +57,7 @@ public class RefOutInTests
     }
 
     [Fact]
-    public void In_parameter_is_matched()
+    public void In_Parameter_Is_Matched()
     {
         var mock = new MockParser();
         mock.Sum(2, 3).Returns(5);
@@ -66,7 +66,7 @@ public class RefOutInTests
     }
 
     [Fact]
-    public void Verify_and_ReceivedCalls_work_with_out_param()
+    public void Verify_And_ReceivedCalls_Work_With_Out_Param()
     {
         var mock = new MockParser();
         mock.TryParse(Any).Returns(true);
@@ -79,7 +79,7 @@ public class RefOutInTests
     }
 
     [Fact]
-    public void Abstract_class_out_parameter_is_written_back()
+    public void Abstract_Class_Out_Parameter_Is_Written_Back()
     {
         var mock = new MockRefSink();
         mock.TryTake().Callback(args => args[0] = 7).Returns(true);
@@ -88,5 +88,17 @@ public class RefOutInTests
 
         Assert.True(ok);
         Assert.Equal(7, v);
+    }
+
+    [Fact]
+    public void Ref_Returning_Members_Throw_But_Dont_Break_The_Rest_Of_The_Mock()
+    {
+        var mock = new MockRefReturn();
+        mock.Normal(7).Returns(70);
+
+        Assert.Equal(70, mock.Instance.Normal(7));   // rest of the mock still works
+
+        Assert.Throws<System.NotSupportedException>(() => mock.Instance.Slot());
+        Assert.Throws<System.NotSupportedException>(() => mock.Instance.Peek());
     }
 }

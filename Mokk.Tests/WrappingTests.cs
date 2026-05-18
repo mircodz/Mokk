@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class WrappingTests
 {
     [Fact]
-    public void Unconfigured_calls_delegate_to_real_object()
+    public void Unconfigured_Calls_Delegate_To_Real_Object()
     {
         var mock = new MockEmailService(wrapping: new RealEmailService());
 
@@ -16,7 +16,7 @@ public class WrappingTests
     }
 
     [Fact]
-    public void Setup_takes_priority_over_wrapped_object()
+    public void Setup_Takes_Priority_Over_Wrapped_Object()
     {
         var mock = new MockEmailService(wrapping: new RealEmailService());
         mock.GetTemplate("welcome", 1).Returns("mocked");
@@ -27,7 +27,7 @@ public class WrappingTests
     }
 
     [Fact]
-    public void Calls_to_real_object_are_still_recorded()
+    public void Calls_To_Real_Object_Are_Still_Recorded()
     {
         var mock = new MockEmailService(wrapping: new RealEmailService());
 
@@ -37,7 +37,7 @@ public class WrappingTests
     }
 
     [Fact]
-    public void Callbacks_still_fire_on_matched_setups()
+    public void Callbacks_Still_Fire_On_Matched_Setups()
     {
         var mock = new MockEmailService(wrapping: new RealEmailService());
         var called = false;

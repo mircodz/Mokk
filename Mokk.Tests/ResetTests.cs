@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class ResetTests
 {
     [Fact]
-    public void Reset_clears_setups()
+    public void Reset_Clears_Setups()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -18,7 +18,7 @@ public class ResetTests
     }
 
     [Fact]
-    public void Reset_clears_call_history()
+    public void Reset_Clears_Call_History()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -30,7 +30,7 @@ public class ResetTests
     }
 
     [Fact]
-    public void Setups_added_after_reset_work_normally()
+    public void Setups_Added_After_Reset_Work_Normally()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);

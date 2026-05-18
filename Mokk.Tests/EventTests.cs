@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class EventTests
 {
     [Fact]
-    public void Raise_invokes_subscribed_eventhandler()
+    public void Raise_Invokes_Subscribed_Eventhandler()
     {
         var mock = new MockUserRepository();
         UserChangedEventArgs? received = null;
@@ -22,7 +22,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Raise_invokes_all_subscribers()
+    public void Raise_Invokes_All_Subscribers()
     {
         var mock = new MockUserRepository();
         int count = 0;
@@ -36,7 +36,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Unsubscribed_handler_is_not_invoked()
+    public void Unsubscribed_Handler_Is_Not_Invoked()
     {
         var mock = new MockUserRepository();
         int count = 0;
@@ -50,14 +50,14 @@ public class EventTests
     }
 
     [Fact]
-    public void Raise_with_no_subscribers_is_a_noop()
+    public void Raise_With_No_Subscribers_Is_A_Noop()
     {
         var mock = new MockUserRepository();
         mock.UserChanged.Raise(null, new UserChangedEventArgs(1)); // must not throw
     }
 
     [Fact]
-    public void SubscriberCount_tracks_add_and_remove()
+    public void SubscriberCount_Tracks_Add_And_Remove()
     {
         var mock = new MockUserRepository();
         EventHandler<UserChangedEventArgs> handler = (_, _) => { };
@@ -72,7 +72,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Raise_works_with_custom_delegate_type()
+    public void Raise_Works_With_Custom_Delegate_Type()
     {
         var mock = new MockUserRepository();
         int capturedId = 0;
@@ -87,7 +87,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Abstract_class_event_can_be_raised()
+    public void Abstract_Class_Event_Can_Be_Raised()
     {
         var mock = new MockNotificationService();
         UserChangedEventArgs? received = null;
@@ -100,7 +100,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Subscribed_and_Unsubscribed_count_any_handler()
+    public void Subscribed_And_Unsubscribed_Count_Any_Handler()
     {
         var mock = new MockUserRepository();
         EventHandler<UserChangedEventArgs> a = (_, _) => { };
@@ -115,7 +115,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Subscribed_and_Unsubscribed_count_a_specific_handler()
+    public void Subscribed_And_Unsubscribed_Count_A_Specific_Handler()
     {
         var mock = new MockUserRepository();
         EventHandler<UserChangedEventArgs> h = (_, _) => { };
@@ -130,7 +130,7 @@ public class EventTests
     }
 
     [Fact]
-    public void HandlerInvoked_counts_invocations_per_handler()
+    public void HandlerInvoked_Counts_Invocations_Per_Handler()
     {
         var mock = new MockUserRepository();
         EventHandler<UserChangedEventArgs> a = (_, _) => { };
@@ -147,7 +147,7 @@ public class EventTests
     }
 
     [Fact]
-    public void HandlerInvoked_ignores_unsubscribed_handler()
+    public void HandlerInvoked_Ignores_Unsubscribed_Handler()
     {
         var mock = new MockUserRepository();
         EventHandler<UserChangedEventArgs> h = (_, _) => { };
@@ -161,7 +161,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Verify_failure_throws_VerificationException()
+    public void Verify_Failure_Throws_VerificationException()
     {
         var mock = new MockUserRepository();
         mock.Instance.UserChanged += (_, _) => { };
@@ -171,7 +171,7 @@ public class EventTests
     }
 
     [Fact]
-    public void Reset_clears_subscription_and_invocation_history()
+    public void Reset_Clears_Subscription_And_Invocation_History()
     {
         var mock = new MockUserRepository();
         EventHandler<UserChangedEventArgs> h = (_, _) => { };

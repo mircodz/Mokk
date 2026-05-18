@@ -8,7 +8,7 @@ namespace Mokk.Tests;
 public class AsyncTests
 {
     [Fact]
-    public async Task ReturnsAsync_for_Task()
+    public async Task ReturnsAsync_For_Task()
     {
         var mock = new MockUserRepository();
         mock.GetUserAsync(42).ReturnsAsync("Alice");
@@ -17,7 +17,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ReturnsAsync_for_ValueTask()
+    public async Task ReturnsAsync_For_ValueTask()
     {
         var mock = new MockUserRepository();
         mock.CountAsync().ReturnsAsync(5);
@@ -26,7 +26,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ReturnsAsync_factory_is_invoked_per_call()
+    public async Task ReturnsAsync_Factory_Is_Invoked_Per_Call()
     {
         var mock = new MockUserRepository();
         int n = 0;
@@ -37,7 +37,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ThrowsAsync_faults_Task_of_T()
+    public async Task ThrowsAsync_Faults_Task_Of_T()
     {
         var mock = new MockUserRepository();
         mock.GetUserAsync(Any).ThrowsAsync(new InvalidOperationException("boom"));
@@ -48,7 +48,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ThrowsAsync_faults_ValueTask_of_T()
+    public async Task ThrowsAsync_Faults_ValueTask_Of_T()
     {
         var mock = new MockUserRepository();
         mock.CountAsync().ThrowsAsync(new InvalidOperationException());
@@ -58,7 +58,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ThrowsAsync_faults_plain_Task()
+    public async Task ThrowsAsync_Faults_Plain_Task()
     {
         var mock = new MockUserRepository();
         mock.SaveAsync().ThrowsAsync(new InvalidOperationException());
@@ -68,7 +68,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ThrowsAsync_generic_for_plain_ValueTask()
+    public async Task ThrowsAsync_Generic_For_Plain_ValueTask()
     {
         var mock = new MockUserRepository();
         mock.FlushAsync().ThrowsAsync<InvalidOperationException>();
@@ -78,7 +78,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task ThrowsAsync_returns_a_faulted_task_not_a_sync_throw()
+    public async Task ThrowsAsync_Returns_A_Faulted_Task_Not_A_Sync_Throw()
     {
         var mock = new MockUserRepository();
         mock.GetUserAsync(Any).ThrowsAsync(new InvalidOperationException());
@@ -89,7 +89,7 @@ public class AsyncTests
     }
 
     [Fact]
-    public async Task Async_sequence_returns_then_faults()
+    public async Task Async_Sequence_Returns_Then_Faults()
     {
         var mock = new MockUserRepository();
         mock.GetUserAsync(Any).Sequence()

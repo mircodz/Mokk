@@ -49,9 +49,10 @@ public class MethodCallBenchmarks
         _fakeItEasy = A.Fake<IBenchmarkService>();
         A.CallTo(() => _fakeItEasy.Process(A<string>._)).Returns(true);
 
-        // Imposter
+        // Imposter (fully qualified: Mokk.Arg<T> would otherwise win name lookup
+        // from the enclosing Mokk namespace).
         var imp = new IBenchmarkServiceImposter();
-        imp.Process(Arg<string>.Any()).Returns(true);
+        imp.Process(global::Imposter.Abstractions.Arg<string>.Any()).Returns(true);
         _imposter = imp.Instance();
     }
 

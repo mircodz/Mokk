@@ -6,6 +6,8 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IBaseService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IExtendedService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.ITemplatedService))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IConstrained))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractFactory))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractNotificationService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IMessage))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IMessage<>))]
@@ -17,6 +19,10 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IInventory))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IGrid))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractLookup))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IInitOnly))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IReservedNames))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IRefReturn))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractSeeded))]
 
 namespace Mokk.Tests;
 
@@ -58,6 +64,19 @@ public interface IExtendedService : IBaseService
 public interface ITemplatedService
 {
     T DoSomething<T>(T value);
+}
+
+public interface IConstrained
+{
+    T Create<T>() where T : class, new();
+    void Store<TKey, TValue>(TKey key, TValue value) where TKey : notnull where TValue : struct;
+}
+
+// Abstract class with a constrained generic method: the override must NOT
+// restate the constraints (CS0460), unlike the interface implicit impl.
+public abstract class AbstractFactory
+{
+    public abstract T Make<T>(string tag) where T : class, new();
 }
 
 // Same base name, three different arities, all mocked in one assembly.
@@ -127,6 +146,38 @@ public abstract class AbstractLookup
 {
     public abstract string this[int id] { get; set; }
     public virtual int Capacity => 0;
+}
+
+public interface IInitOnly
+{
+    int Id { get; init; }
+    string Name { get; init; }
+}
+
+// Members whose names collide with Mokk's own mock surface; their setup
+// handles must be exposed as {Name}Handle.
+public interface IReservedNames
+{
+    int Instance { get; }
+    void Reset();
+    int Work(int x);
+}
+
+// Mix of ref / ref readonly returns and a normal method: the ref members get
+// throwing stubs, the normal one stays fully mockable.
+public interface IRefReturn
+{
+    ref int Slot();
+    ref readonly int Peek();
+    int Normal(int x);
+}
+
+// No accessible parameterless constructor: the mock must chain to base(int).
+public abstract class AbstractSeeded
+{
+    protected AbstractSeeded(int seed) => Seed = seed;
+    public int Seed { get; }
+    public abstract int Next(int step);
 }
 
 // Real implementation used by wrapping tests

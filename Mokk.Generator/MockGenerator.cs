@@ -14,6 +14,56 @@ public class MockGenerator : IIncrementalGenerator
     private static readonly SymbolDisplayFormat TypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
         .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted);
 
+    // Static abstract/virtual members exist only on the type, not an instance,
+    // so an interceptor-backed mock can't implement them (and the mock type
+    // can't satisfy the consumer's generic constraint either).
+    private static readonly DiagnosticDescriptor StaticAbstractUnsupported = new(
+        id: "MOKK001",
+        title: "Static abstract members cannot be mocked",
+        messageFormat: "'{0}' declares static abstract/virtual member(s)",
+        category: "Mokk",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    // Ref structs (Span<T> etc.) and pointer/function-pointer types can't be a
+    // Matcher<T>/MethodHandle<T> type argument or boxed into the args array, so
+    // a member using one is unmockable.
+    private static readonly DiagnosticDescriptor RefStructUnsupported = new(
+        id: "MOKK002",
+        title: "Ref-struct or pointer types cannot be mocked",
+        messageFormat: "'{0}' has a member using a ref-struct or pointer type",
+        category: "Mokk",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    private static bool HasStaticAbstractMember(INamedTypeSymbol iface)
+        => iface.GetMembers()
+            .Concat(iface.AllInterfaces.SelectMany(i => i.GetMembers()))
+            .Any(m => m.IsStatic && (m.IsAbstract || m.IsVirtual)
+                      && m is IMethodSymbol or IPropertySymbol or IEventSymbol);
+
+    private static bool ReferencesUnmockableType(INamedTypeSymbol type)
+    {
+        static bool Bad(ITypeSymbol t)
+            => t.IsRefLikeType || t.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer;
+
+        var members = new List<ISymbol>();
+        for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            members.AddRange(t.GetMembers());
+        members.AddRange(type.AllInterfaces.SelectMany(i => i.GetMembers()));
+
+        foreach (var m in members)
+        {
+            switch (m)
+            {
+                case IMethodSymbol mm when Bad(mm.ReturnType) || mm.Parameters.Any(p => Bad(p.Type)):
+                case IPropertySymbol pp when Bad(pp.Type) || pp.Parameters.Any(p => Bad(p.Type)):
+                    return true;
+            }
+        }
+        return false;
+    }
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var allTargets = context.SyntaxProvider
@@ -58,6 +108,19 @@ public class MockGenerator : IIncrementalGenerator
 
     private static void Execute(SourceProductionContext context, INamedTypeSymbol interfaceSymbol, bool emitFactory)
     {
+        if (HasStaticAbstractMember(interfaceSymbol))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                StaticAbstractUnsupported, interfaceSymbol.Locations.FirstOrDefault(), interfaceSymbol.Name));
+            return;
+        }
+        if (ReferencesUnmockableType(interfaceSymbol))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                RefStructUnsupported, interfaceSymbol.Locations.FirstOrDefault(), interfaceSymbol.Name));
+            return;
+        }
+
         var interfaceName = interfaceSymbol.Name;
         var ns = interfaceSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -83,9 +146,10 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitMockClass(sb, mockClassName, qualifiedInterface, members, generics);
+        var vis = Visibility(interfaceSymbol);
+        EmitMockClass(sb, mockClassName, qualifiedInterface, members, generics, vis);
         if (emitFactory)
-            EmitFactoryExtension(sb, qualifiedInterface, mockClassName, generics, isInterface: true);
+            EmitFactoryExtension(sb, qualifiedInterface, mockClassName, generics, isInterface: true, vis);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
         if (generics.Arity > 0)
@@ -120,7 +184,13 @@ public class MockGenerator : IIncrementalGenerator
             return new GenericInfo("", "", 0);
 
         var typeParams = $"<{string.Join(", ", tps.Select(tp => tp.Name))}>";
+        return new GenericInfo(typeParams, FormatConstraints(tps), tps.Length);
+    }
 
+    // Builds the " where T : ..." clauses for a set of type parameters. Shared
+    // by the mocked type itself and by individual generic methods.
+    private static string FormatConstraints(IEnumerable<ITypeParameterSymbol> tps)
+    {
         var clauses = new StringBuilder();
         foreach (var tp in tps)
         {
@@ -141,7 +211,7 @@ public class MockGenerator : IIncrementalGenerator
                 clauses.Append($" where {tp.Name} : {string.Join(", ", parts)}");
         }
 
-        return new GenericInfo(typeParams, clauses.ToString(), tps.Length);
+        return clauses.ToString();
     }
 
     private static MemberCollection CollectMembers(INamedTypeSymbol interfaceSymbol)
@@ -221,8 +291,11 @@ public class MockGenerator : IIncrementalGenerator
         return new MemberCollection(methods, properties, events, indexers, forwards);
     }
 
+    // Ref-kind is part of the signature: M(int) and M(ref int) are distinct
+    // interface slots that both need an implementation.
     private static string FormatParamType(IEnumerable<IParameterSymbol> ps)
-        => string.Join(",", ps.Select(p => p.Type.ToDisplayString(TypeFormat)));
+        => string.Join(",", ps.Select(p =>
+            (p.RefKind == RefKind.None ? "" : p.RefKind + " ") + p.Type.ToDisplayString(TypeFormat)));
 
     private static string MethodSignatureKey(IMethodSymbol m)
         => $"{m.Name}({FormatParamType(m.Parameters)})";
@@ -279,6 +352,16 @@ public class MockGenerator : IIncrementalGenerator
     private static string TypeParamList(MethodModel m)
         => m.TypeParameterNames.Count > 0 ? $"<{string.Join(", ", m.TypeParameterNames)}>" : "";
 
+    // The mock class already defines these; a member of the same name would
+    // collide (CS0102/CS0111), so its setup handle is exposed as `{Name}Handle`.
+    private static readonly HashSet<string> ReservedNames = new()
+    {
+        "Instance", "Reset", "CheckUnusedSetups", "VerifyNoOtherCalls", "VerifyInOrder", "Indexer",
+    };
+
+    private static string HandleName(string memberName)
+        => ReservedNames.Contains(memberName) ? memberName + "Handle" : memberName;
+
     // Setup accessor: `Indexer(Matcher<int> i)` → IndexerHandle keyed on the
     // indexer's metadata name. Emitted on the mock for both interfaces and
     // abstract classes (a method, so it never clashes with an overridden
@@ -290,12 +373,36 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine();
     }
 
+    // Sugar `mock[matcher]` for single-index *interface* mocks (the mock class
+    // has no real indexer, so there's no `mock[5]` ambiguity). Abstract-class
+    // mocks ARE the type and keep only the `Indexer(...)` method form.
+    private static void EmitIndexerBracket(StringBuilder sb, string indent, IndexerModel x)
+    {
+        if (x.Parameters.Count != 1)
+            return;
+        var p = x.Parameters[0];
+        sb.AppendLine($"{indent}public IndexerHandle<{p.Type}, {x.ValueType}> this[Matcher<{p.Type}> {p.Name}]");
+        sb.AppendLine($"{indent}    => new(_interceptor, \"{x.MetadataName}\", {p.Name}.Inner);");
+        sb.AppendLine();
+    }
+
     // The real `this[...]` member that satisfies the interface/base type,
     // forwarding to the interceptor as get_/set_<MetadataName>.
     private static void EmitIndexerImpl(StringBuilder sb, string indent, string prefix, IndexerModel x)
     {
         var sig = string.Join(", ", x.Parameters.Select(p => $"{p.Type} {p.Name}"));
         var indexArgs = string.Join(", ", x.Parameters.Select(p => p.Name));
+
+        // A by-ref indexer can't return a ref to interception storage (same as
+        // ref-returning methods): emit a compiling stub that throws if used.
+        if (x.RefReturnKind.Length > 0)
+        {
+            sb.AppendLine($"{indent}{prefix} {x.RefReturnKind}{x.ValueType} this[{sig}]");
+            sb.AppendLine($"{indent}    => throw new System.NotSupportedException(\"Mokk cannot mock the ref-returning indexer.\");");
+            sb.AppendLine();
+            return;
+        }
+
         sb.AppendLine($"{indent}{prefix} {x.ValueType} this[{sig}]");
         sb.AppendLine($"{indent}{{");
         if (x.HasGetter)
@@ -313,15 +420,29 @@ public class MockGenerator : IIncrementalGenerator
     {
         var typeParams = TypeParamList(m);
         var typeArgs = TypeArgsExpr(m);
+        // An override inherits its constraints (restating them is CS0460);
+        // an implicit interface implementation must restate them (CS0425).
+        var constraints = prefix.Contains("override") ? "" : m.Constraints;
         var sig = string.Join(", ", m.Parameters.Select(p => $"{p.Modifier}{p.Type} {p.Name}"));
         var argsLiteral = m.Parameters.Count > 0
             ? $"new object?[] {{ {string.Join(", ", m.Parameters.Select(p => p.IsOut ? $"default({p.Type})" : p.Name))} }}"
             : "Array.Empty<object?>()";
         var ret = m.IsVoid ? "void" : m.ReturnType;
 
+        // A by-ref return must hand back a ref to real storage; interception
+        // returns by value, so there's nothing to ref. Emit a compiling stub
+        // (the rest of the mock stays usable) that throws if actually called.
+        if (m.ReturnRefKind.Length > 0)
+        {
+            sb.AppendLine($"{indent}{prefix} {m.ReturnRefKind}{ret} {m.Name}{typeParams}({sig}){constraints}");
+            sb.AppendLine($"{indent}    => throw new System.NotSupportedException(\"Mokk cannot mock ref-returning member '{m.Name}'.\");");
+            sb.AppendLine();
+            return;
+        }
+
         if (!m.Parameters.Any(p => p.WritesBack))
         {
-            sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig})");
+            sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig}){constraints}");
             sb.AppendLine(m.IsVoid
                 ? $"{indent}    => _interceptor.InterceptVoid(\"{m.Name}\", {typeArgs}, {argsLiteral});"
                 : $"{indent}    => _interceptor.Intercept<{m.ReturnType}>(\"{m.Name}\", {typeArgs}, {argsLiteral});");
@@ -329,7 +450,7 @@ public class MockGenerator : IIncrementalGenerator
             return;
         }
 
-        sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig})");
+        sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig}){constraints}");
         sb.AppendLine($"{indent}{{");
         sb.AppendLine($"{indent}    var __args = {argsLiteral};");
         sb.AppendLine(m.IsVoid
@@ -347,11 +468,11 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine();
     }
 
-    // C# 14 static extension members let `IFoo.Mock()` work without the user
-    // declaring their type partial. Only emitted when the consumer compiles with
-    // C# 14+ (detected from parse options), so older toolchains never see it.
+    private static string Visibility(INamedTypeSymbol s)
+        => s.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
+
     private static void EmitFactoryExtension(
-        StringBuilder sb, string qualifiedType, string mockClassName, GenericInfo generics, bool isInterface)
+        StringBuilder sb, string qualifiedType, string mockClassName, GenericInfo generics, bool isInterface, string vis)
     {
         var mockType = $"{mockClassName}{generics.TypeParams}";
         var ctorParams = isInterface
@@ -364,15 +485,16 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine("{");
         sb.AppendLine($"    extension{generics.TypeParams}({qualifiedType}){generics.Constraints}");
         sb.AppendLine("    {");
-        sb.AppendLine($"        public static {mockType} Mock({ctorParams}) => new({ctorArgs});");
+        sb.AppendLine($"        {vis} static {mockType} Mock({ctorParams}) => new({ctorArgs});");
         sb.AppendLine("    }");
         sb.AppendLine("}");
     }
 
     private static void EmitMockClass(
-        StringBuilder sb, string className, string qualifiedInterface, MemberCollection members, GenericInfo generics)
+        StringBuilder sb, string className, string qualifiedInterface, MemberCollection members,
+        GenericInfo generics, string vis)
     {
-        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : global::Mokk.IMockObject{generics.Constraints}");
+        sb.AppendLine($"{vis} sealed class {className}{generics.TypeParams} : global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine($"    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    private readonly __Instance _inner;");
@@ -390,21 +512,27 @@ public class MockGenerator : IIncrementalGenerator
         sb.AppendLine($"    public void VerifyNoOtherCalls() => _interceptor.VerifyNoOtherCalls();");
         sb.AppendLine();
 
+        // Matchers drop ref/out, so ref-differing overloads collapse to one
+        // handle signature. The runtime keys by method name anyway, so a single
+        // handle drives all of them; emit it once to avoid CS0111.
+        var seenHandles = new HashSet<string>();
         foreach (var m in members.Methods)
         {
             var typeParams = TypeParamList(m);
             var matcherParms = HandleMatcherParams(m);
+            if (!seenHandles.Add($"{m.Name}{typeParams}({matcherParms})"))
+                continue;
             var typeArgsExpr = TypeArgsExpr(m);
             var matchersExpr = HandleMatchersExpr(m);
 
             if (m.IsVoid)
             {
-                sb.AppendLine($"    public VoidMethodHandle {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"    public VoidMethodHandle {HandleName(m.Name)}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"        => new(_interceptor, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             else
             {
-                sb.AppendLine($"    public MethodHandle<{m.ReturnType}> {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"    public MethodHandle<{m.ReturnType}> {HandleName(m.Name)}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"        => new(_interceptor, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             sb.AppendLine();
@@ -412,18 +540,21 @@ public class MockGenerator : IIncrementalGenerator
 
         foreach (var p in members.Properties)
         {
-            sb.AppendLine($"    public PropertyHandle<{p.Type}> {p.Name} => new(_interceptor, \"{p.Name}\");");
+            sb.AppendLine($"    public PropertyHandle<{p.Type}> {HandleName(p.Name)} => new(_interceptor, \"{p.Name}\");");
             sb.AppendLine();
         }
 
         foreach (var e in members.Events)
         {
-            sb.AppendLine($"    public EventHandle {e.Name} => new(_interceptor, \"{e.Name}\");");
+            sb.AppendLine($"    public EventHandle {HandleName(e.Name)} => new(_interceptor, \"{e.Name}\");");
             sb.AppendLine();
         }
 
         foreach (var x in members.Indexers)
+        {
             EmitIndexerSetupAccessor(sb, "    ", x);
+            EmitIndexerBracket(sb, "    ", x);
+        }
 
         EmitVerifyInOrder(sb, "_interceptor", indent: "    ");
         sb.AppendLine();
@@ -473,17 +604,23 @@ public class MockGenerator : IIncrementalGenerator
 
         foreach (var p in members.Properties)
         {
+            if (p.RefReturnKind.Length > 0)
+            {
+                sb.AppendLine($"{ii}public {p.RefReturnKind}{p.Type} {p.Name} => throw new System.NotSupportedException(\"Mokk cannot mock ref-returning property '{p.Name}'.\");");
+                sb.AppendLine();
+                continue;
+            }
             sb.AppendLine($"{ii}public {p.Type} {p.Name}");
             sb.AppendLine($"{ii}{{");
             if (p.HasGetter)
             {
                 if (p.HasSetter)
-                    sb.AppendLine($"{ii}    get => _backing_{p.Name}_set ? _backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
+                    sb.AppendLine($"{ii}    get => _backing_{p.Name}_set ? ({p.Type})_backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
                 else
                     sb.AppendLine($"{ii}    get => _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
             }
             if (p.HasSetter)
-                sb.AppendLine($"{ii}    set {{ _backing_{p.Name}_set = true; _backing_{p.Name} = value; _interceptor.InterceptVoid(\"set_{p.Name}\", null, new object?[] {{ value }}); }}");
+                sb.AppendLine($"{ii}    {p.SetterKeyword} {{ _backing_{p.Name}_set = true; _backing_{p.Name} = value; _interceptor.InterceptVoid(\"set_{p.Name}\", null, new object?[] {{ value }}); }}");
             sb.AppendLine($"{ii}}}");
             sb.AppendLine();
         }
@@ -516,6 +653,13 @@ public class MockGenerator : IIncrementalGenerator
 
     private static void ExecuteAbstractClass(SourceProductionContext context, INamedTypeSymbol classSymbol, bool emitFactory)
     {
+        if (ReferencesUnmockableType(classSymbol))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                RefStructUnsupported, classSymbol.Locations.FirstOrDefault(), classSymbol.Name));
+            return;
+        }
+
         var className = classSymbol.Name;
         var ns = classSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -541,9 +685,10 @@ public class MockGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        EmitAbstractClassMock(sb, mockClassName, qualifiedClass, members, generics);
+        var vis = Visibility(classSymbol);
+        EmitAbstractClassMock(sb, mockClassName, classSymbol, qualifiedClass, members, generics, vis);
         if (emitFactory)
-            EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false);
+            EmitFactoryExtension(sb, qualifiedClass, mockClassName, generics, isInterface: false, vis);
 
         var fileName = ns != null ? $"{ns}.{mockClassName}" : mockClassName;
         if (generics.Arity > 0)
@@ -607,15 +752,30 @@ public class MockGenerator : IIncrementalGenerator
     }
 
     private static void EmitAbstractClassMock(
-        StringBuilder sb, string className, string qualifiedClass, MemberCollection members, GenericInfo generics)
+        StringBuilder sb, string className, INamedTypeSymbol classSymbol, string qualifiedClass,
+        MemberCollection members, GenericInfo generics, string vis)
     {
-        sb.AppendLine($"public sealed class {className}{generics.TypeParams} : {qualifiedClass}, global::Mokk.IMockObject{generics.Constraints}");
+        // The mock derives from the abstract class, so its ctor must chain to an
+        // accessible base ctor. With no parameterless one, pick the smallest
+        // accessible ctor and pass defaults (a mock never uses base state).
+        var baseCtor = classSymbol.InstanceConstructors
+            .Where(c => c.DeclaredAccessibility is Accessibility.Public
+                                                or Accessibility.Protected
+                                                or Accessibility.ProtectedOrInternal
+                        && !c.Parameters.Any(p => p.RefKind is RefKind.Out or RefKind.Ref))
+            .OrderBy(c => c.Parameters.Length)
+            .FirstOrDefault();
+        var baseArgs = baseCtor is null || baseCtor.Parameters.Length == 0
+            ? ""
+            : string.Join(", ", baseCtor.Parameters.Select(p => $"default({p.Type.ToDisplayString(TypeFormat)})!"));
+
+        sb.AppendLine($"{vis} sealed class {className}{generics.TypeParams} : {qualifiedClass}, global::Mokk.IMockObject{generics.Constraints}");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly MockInterceptor _interceptor;");
         sb.AppendLine($"    public {qualifiedClass} Instance => this;");
         sb.AppendLine($"    global::Mokk.MockInterceptor global::Mokk.IMockObject.Interceptor => _interceptor;");
         sb.AppendLine();
-        sb.AppendLine($"    public {className}(bool strict = false, System.Action<string>? onUnusedSetup = null) : base()");
+        sb.AppendLine($"    public {className}(bool strict = false, System.Action<string>? onUnusedSetup = null) : base({baseArgs})");
         sb.AppendLine($"        => _interceptor = new(strict, null, typeof({qualifiedClass}), onUnusedSetup);");
         sb.AppendLine();
         sb.AppendLine("    public void Reset() => _interceptor.Reset();");
@@ -638,12 +798,18 @@ public class MockGenerator : IIncrementalGenerator
         foreach (var p in members.Properties)
         {
             var access = p.IsProtected ? "protected" : "public";
+            if (p.RefReturnKind.Length > 0)
+            {
+                sb.AppendLine($"    {access} override {p.RefReturnKind}{p.Type} {p.Name} => throw new System.NotSupportedException(\"Mokk cannot mock ref-returning property '{p.Name}'.\");");
+                sb.AppendLine();
+                continue;
+            }
             sb.AppendLine($"    {access} override {p.Type} {p.Name}");
             sb.AppendLine("    {");
             if (p.HasGetter)
             {
                 if (p.HasSetter)
-                    sb.AppendLine($"        get => _backing_{p.Name}_set ? _backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
+                    sb.AppendLine($"        get => _backing_{p.Name}_set ? ({p.Type})_backing_{p.Name}! : _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
                 else
                     sb.AppendLine($"        get => _interceptor.Intercept<{p.Type}>(\"get_{p.Name}\", null, Array.Empty<object?>());");
             }
@@ -677,25 +843,27 @@ public class MockGenerator : IIncrementalGenerator
     {
         var i = indent;
 
+        var seenHandles = new HashSet<string>();
         foreach (var m in members.Methods)
         {
-            // Zero-parameter shortcuts can't be added: the override already occupies the same signature
-            if (m.Parameters.Count == 0)
-                continue;
-
             var typeParams = TypeParamList(m);
             var matcherParms = HandleMatcherParams(m);
+            // A parameterless method's name is already taken by the override, so
+            // expose its handle as `{Name}Handle` (same trick as properties).
+            var handleName = m.Parameters.Count == 0 ? m.Name + "Handle" : m.Name;
+            if (!seenHandles.Add($"{handleName}{typeParams}({matcherParms})"))
+                continue;
             var typeArgsExpr = TypeArgsExpr(m);
             var matchersExpr = HandleMatchersExpr(m);
 
             if (m.IsVoid)
             {
-                sb.AppendLine($"{i}public VoidMethodHandle {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"{i}public VoidMethodHandle {handleName}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"{i}    => new({interceptorRef}, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             else
             {
-                sb.AppendLine($"{i}public MethodHandle<{m.ReturnType}> {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"{i}public MethodHandle<{m.ReturnType}> {handleName}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"{i}    => new({interceptorRef}, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             sb.AppendLine();
@@ -741,6 +909,8 @@ public class MockGenerator : IIncrementalGenerator
         public bool IsProtected { get; private set; }
         public List<ParameterModel> Parameters { get; private set; } = new();
         public List<string> TypeParameterNames { get; private set; } = new();
+        public string Constraints { get; private set; } = "";  // " where T : ..." or ""
+        public string ReturnRefKind { get; private set; } = "";  // "", "ref ", "ref readonly "
 
         public static MethodModel From(IMethodSymbol s) => new()
         {
@@ -749,6 +919,8 @@ public class MockGenerator : IIncrementalGenerator
             ReturnType = s.ReturnType.ToDisplayString(TypeFormat),
             Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
             TypeParameterNames = s.TypeParameters.Select(tp => tp.Name).ToList(),
+            Constraints = FormatConstraints(s.TypeParameters),
+            ReturnRefKind = s.ReturnsByRefReadonly ? "ref readonly " : s.ReturnsByRef ? "ref " : "",
             IsProtected = IsProtectedAccess(s),
         };
     }
@@ -791,7 +963,11 @@ public class MockGenerator : IIncrementalGenerator
         public string Type { get; private set; } = "";
         public bool HasGetter { get; private set; }
         public bool HasSetter { get; private set; }
+        public bool IsInitOnly { get; private set; }
         public bool IsProtected { get; private set; }
+        public string RefReturnKind { get; private set; } = "";  // "", "ref ", "ref readonly "
+
+        public string SetterKeyword => IsInitOnly ? "init" : "set";
 
         public static PropertyModel From(IPropertySymbol s) => new()
         {
@@ -799,6 +975,8 @@ public class MockGenerator : IIncrementalGenerator
             Type = s.Type.ToDisplayString(TypeFormat),
             HasGetter = !s.IsWriteOnly,
             HasSetter = !s.IsReadOnly,
+            IsInitOnly = s.SetMethod?.IsInitOnly == true,
+            RefReturnKind = s.ReturnsByRefReadonly ? "ref readonly " : s.ReturnsByRef ? "ref " : "",
             IsProtected = IsProtectedAccess(s),
         };
     }
@@ -827,6 +1005,7 @@ public class MockGenerator : IIncrementalGenerator
         public bool HasGetter { get; private set; }
         public bool HasSetter { get; private set; }
         public bool IsProtected { get; private set; }
+        public string RefReturnKind { get; private set; } = "";  // "", "ref ", "ref readonly "
         public List<ParameterModel> Parameters { get; private set; } = new();
 
         public static IndexerModel From(IPropertySymbol s) => new()
@@ -835,6 +1014,7 @@ public class MockGenerator : IIncrementalGenerator
             ValueType = s.Type.ToDisplayString(TypeFormat),
             HasGetter = !s.IsWriteOnly,
             HasSetter = !s.IsReadOnly,
+            RefReturnKind = s.ReturnsByRefReadonly ? "ref readonly " : s.ReturnsByRef ? "ref " : "",
             IsProtected = IsProtectedAccess(s),
             Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
         };
