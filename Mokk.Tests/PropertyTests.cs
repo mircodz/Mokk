@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class PropertyTests
 {
     [Fact]
-    public void Getter_returns_setup_value()
+    public void Getter_Returns_Setup_Value()
     {
         var mock = new MockUserRepository();
         mock.Name.Getter().Returns("Alice");
@@ -17,7 +17,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Read_only_property_works_via_interceptor()
+    public void Read_Only_Property_Works_Via_Interceptor()
     {
         var mock = new MockUserRepository();
         mock.Age.Getter().Returns(30);
@@ -26,7 +26,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Setter_is_intercepted_and_verifiable()
+    public void Setter_Is_Intercepted_And_Verifiable()
     {
         var mock = new MockUserRepository();
         mock.Instance.Name = "Bob";
@@ -35,7 +35,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Set_then_get_returns_set_value()
+    public void Set_Then_Get_Returns_Set_Value()
     {
         var mock = new MockUserRepository();
         mock.Instance.Name = "Alice";
@@ -44,7 +44,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Set_value_takes_priority_over_getter_setup()
+    public void Set_Value_Takes_Priority_Over_Getter_Setup()
     {
         var mock = new MockUserRepository();
         mock.Name.Getter().Returns("FromSetup");
@@ -54,7 +54,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Reset_clears_backing_store()
+    public void Reset_Clears_Backing_Store()
     {
         var mock = new MockUserRepository();
         mock.Instance.Name = "Alice";
@@ -64,7 +64,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Init_only_property_getter_is_mockable()
+    public void Init_Only_Property_Getter_Is_Mockable()
     {
         var mock = new MockInitOnly();
         mock.Id.Getter().Returns(42);
@@ -75,7 +75,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Indexer_getter_returns_value_for_matching_key()
+    public void Indexer_Getter_Returns_Value_For_Matching_Key()
     {
         var mock = new MockInventory();
         mock.Indexer("apple").Getter().Returns(5);
@@ -86,7 +86,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Indexer_getter_with_no_setup_returns_smart_default()
+    public void Indexer_Getter_With_No_Setup_Returns_Smart_Default()
     {
         var mock = new MockInventory();
 
@@ -94,7 +94,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Indexer_setter_is_intercepted_and_verifiable_by_key_and_value()
+    public void Indexer_Setter_Is_Intercepted_And_Verifiable_By_Key_And_Value()
     {
         var mock = new MockInventory();
 
@@ -105,7 +105,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Overloaded_indexers_are_dispatched_by_argument_type()
+    public void Overloaded_Indexers_Are_Dispatched_By_Argument_Type()
     {
         var mock = new MockInventory();
         mock.Indexer("sku-1").Getter().Returns(7);
@@ -116,7 +116,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Read_only_indexer_getter_callback_sees_index()
+    public void Read_Only_Indexer_Getter_Callback_Sees_Index()
     {
         var mock = new MockInventory();
         mock.Indexer(Matcher<int>.Any).Getter().Returns<int>(i => i * 10);
@@ -126,7 +126,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Multi_parameter_indexer_matches_on_all_args()
+    public void Multi_Parameter_Indexer_Matches_On_All_Args()
     {
         var mock = new MockGrid();
         mock.Indexer(1, 2).Getter().Returns("one-two");
@@ -137,7 +137,7 @@ public class PropertyTests
     }
 
     [Fact]
-    public void Abstract_class_indexer_get_and_set()
+    public void Abstract_Class_Indexer_Get_And_Set()
     {
         var mock = new MockLookup();
         mock.Indexer(1).Getter().Returns("alice");

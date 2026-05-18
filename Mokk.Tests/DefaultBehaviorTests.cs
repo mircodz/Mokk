@@ -8,21 +8,21 @@ namespace Mokk.Tests;
 public class DefaultBehaviorTests
 {
     [Fact]
-    public void Smart_default_for_string_is_empty()
+    public void Smart_Default_For_String_Is_Empty()
     {
         var mock = new MockEmailService();
         Assert.Equal("", mock.Instance.GetTemplate("x", 1));
     }
 
     [Fact]
-    public void Smart_default_for_bool_is_false()
+    public void Smart_Default_For_Bool_Is_False()
     {
         var mock = new MockEmailService();
         Assert.False(mock.Instance.Send("a@b.com", "hi"));
     }
 
     [Fact]
-    public async Task Smart_default_for_Task_of_T_is_a_completed_task()
+    public async Task Smart_Default_For_Task_Of_T_Is_A_Completed_Task()
     {
         var mock = new MockUserRepository();
         var task = mock.Instance.GetUserAsync(1);
@@ -32,14 +32,14 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public async Task Smart_default_for_ValueTask_of_T_is_default()
+    public async Task Smart_Default_For_ValueTask_Of_T_Is_Default()
     {
         var mock = new MockUserRepository();
         Assert.Equal(0, await mock.Instance.CountAsync());
     }
 
     [Fact]
-    public void Strict_throws_when_no_setup_matches()
+    public void Strict_Throws_When_No_Setup_Matches()
     {
         var mock = new MockEmailService(strict: true);
 
@@ -47,7 +47,7 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public void Strict_does_not_throw_when_setup_matches()
+    public void Strict_Does_Not_Throw_When_Setup_Matches()
     {
         var mock = new MockEmailService(strict: true);
         mock.Send(Any, Any).Returns(true);
@@ -56,7 +56,7 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public void Unused_setup_reported_when_never_matched()
+    public void Unused_Setup_Reported_When_Never_Matched()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -69,7 +69,7 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public void Unused_setup_not_reported_when_all_matched()
+    public void Unused_Setup_Not_Reported_When_All_Matched()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -82,7 +82,7 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public void Unused_setup_single_message_lists_all_unused()
+    public void Unused_Setup_Single_Message_Lists_All_Unused()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -97,7 +97,7 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public void Unused_setup_only_reports_unmatched()
+    public void Unused_Setup_Only_Reports_Unmatched()
     {
         var warnings = new List<string>();
         var mock = new MockEmailService(onUnusedSetup: warnings.Add);
@@ -113,7 +113,7 @@ public class DefaultBehaviorTests
     }
 
     [Fact]
-    public void Unused_setup_check_is_disabled_without_a_callback()
+    public void Unused_Setup_Check_Is_Disabled_Without_A_Callback()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);

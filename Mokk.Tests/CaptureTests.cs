@@ -7,7 +7,7 @@ namespace Mokk.Tests;
 public class CaptureTests
 {
     [Fact]
-    public void Captures_argument_on_match()
+    public void Captures_Argument_On_Match()
     {
         var slot = Slot<string>();
         var mock = new MockEmailService();
@@ -20,7 +20,7 @@ public class CaptureTests
     }
 
     [Fact]
-    public void Slot_updated_on_each_call()
+    public void Slot_Updated_On_Each_Call()
     {
         var slot = Slot<string>();
         var mock = new MockEmailService();
@@ -33,7 +33,7 @@ public class CaptureTests
     }
 
     [Fact]
-    public void HasValue_false_when_never_called()
+    public void HasValue_False_When_Never_Called()
     {
         var slot = Slot<string>();
         var mock = new MockEmailService();
@@ -44,7 +44,7 @@ public class CaptureTests
     }
 
     [Fact]
-    public void Capture_does_not_fire_for_non_matching_setup()
+    public void Capture_Does_Not_Fire_For_Non_Matching_Setup()
     {
         var slot = Slot<string>();
         var mock = new MockEmailService();
@@ -57,7 +57,7 @@ public class CaptureTests
     }
 
     [Fact]
-    public void Can_capture_value_type_argument()
+    public void Can_Capture_Value_Type_Argument()
     {
         var slot = Slot<int>();
         var mock = new MockEmailService();
@@ -69,7 +69,7 @@ public class CaptureTests
     }
 
     [Fact]
-    public void Multiple_slots_in_same_setup()
+    public void Multiple_Slots_In_Same_Setup()
     {
         var toSlot = Slot<string>();
         var subjectSlot = Slot<string>();

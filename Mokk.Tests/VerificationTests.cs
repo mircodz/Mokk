@@ -7,7 +7,7 @@ namespace Mokk.Tests;
 public class VerificationTests
 {
     [Fact]
-    public void Times_Once_passes_when_called_once()
+    public void Times_Once_Passes_When_Called_Once()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -17,7 +17,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_Once_fails_when_called_twice()
+    public void Times_Once_Fails_When_Called_Twice()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -28,14 +28,14 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_Never_passes_when_not_called()
+    public void Times_Never_Passes_When_Not_Called()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Verify(Times.Never);
     }
 
     [Fact]
-    public void Times_Never_fails_when_called()
+    public void Times_Never_Fails_When_Called()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -45,7 +45,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_AtLeastOnce_passes_when_called_multiple_times()
+    public void Times_AtLeastOnce_Passes_When_Called_Multiple_Times()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -56,14 +56,14 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_AtLeastOnce_fails_when_never_called()
+    public void Times_AtLeastOnce_Fails_When_Never_Called()
     {
         var mock = new MockEmailService();
         Assert.Throws<VerificationException>(() => mock.Send(Any, Any).Verify(Times.AtLeastOnce));
     }
 
     [Fact]
-    public void Times_Exactly_passes()
+    public void Times_Exactly_Passes()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -75,7 +75,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_AtLeast_passes_when_count_is_sufficient()
+    public void Times_AtLeast_Passes_When_Count_Is_Sufficient()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -86,7 +86,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_AtMost_passes_when_under_limit()
+    public void Times_AtMost_Passes_When_Under_Limit()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -96,7 +96,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_AtMost_fails_when_over_limit()
+    public void Times_AtMost_Fails_When_Over_Limit()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -109,7 +109,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_Between_passes_when_in_range()
+    public void Times_Between_Passes_When_In_Range()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -121,7 +121,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Times_Between_fails_when_outside_range()
+    public void Times_Between_Fails_When_Outside_Range()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -131,7 +131,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Verify_is_scoped_to_matching_arguments()
+    public void Verify_Is_Scoped_To_Matching_Arguments()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -144,7 +144,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Verify_works_with_void_methods()
+    public void Verify_Works_With_Void_Methods()
     {
         var repo = new MockUserRepository();
         repo.Instance.Delete(1);
@@ -154,7 +154,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void InOrder_passes_when_calls_happen_in_order()
+    public void InOrder_Passes_When_Calls_Happen_In_Order()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -169,7 +169,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void InOrder_fails_when_calls_happen_in_wrong_order()
+    public void InOrder_Fails_When_Calls_Happen_In_Wrong_Order()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -185,7 +185,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void InOrder_allows_interleaved_calls_between_steps()
+    public void InOrder_Allows_Interleaved_Calls_Between_Steps()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -201,7 +201,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void InOrder_respects_matchers_per_step()
+    public void InOrder_Respects_Matchers_Per_Step()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -216,7 +216,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void InOrder_failure_message_names_the_missing_step()
+    public void InOrder_Failure_Message_Names_The_Missing_Step()
     {
         var mock = new MockEmailService();
 
@@ -233,7 +233,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void InOrder_works_with_void_and_non_void_mixed()
+    public void InOrder_Works_With_Void_And_Non_Void_Mixed()
     {
         var mock = new MockUserRepository();
         mock.GetUserAsync(Any).Returns((int id) => Task.FromResult($"User#{id}"));
@@ -248,14 +248,14 @@ public class VerificationTests
     }
 
     [Fact]
-    public void NoOtherCalls_passes_when_no_calls_made()
+    public void NoOtherCalls_Passes_When_No_Calls_Made()
     {
         var mock = new MockEmailService();
         mock.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public void NoOtherCalls_passes_when_all_calls_verified()
+    public void NoOtherCalls_Passes_When_All_Calls_Verified()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -266,7 +266,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void NoOtherCalls_fails_when_a_call_was_not_verified()
+    public void NoOtherCalls_Fails_When_A_Call_Was_Not_Verified()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -276,7 +276,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void NoOtherCalls_fails_when_second_call_not_verified()
+    public void NoOtherCalls_Fails_When_Second_Call_Not_Verified()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -289,7 +289,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void NoOtherCalls_multiple_verifies_cover_multiple_calls()
+    public void NoOtherCalls_Multiple_Verifies_Cover_Multiple_Calls()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -302,7 +302,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void NoOtherCalls_wildcard_verify_covers_all_matching_calls()
+    public void NoOtherCalls_Wildcard_Verify_Covers_All_Matching_Calls()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -314,7 +314,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void NoOtherCalls_different_methods_each_need_verification()
+    public void NoOtherCalls_Different_Methods_Each_Need_Verification()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -327,7 +327,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Reset_clears_verified_state()
+    public void Reset_Clears_Verified_State()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -340,7 +340,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void Verify_failure_message_lists_recorded_calls_and_marks_matches()
+    public void Verify_Failure_Message_Lists_Recorded_Calls_And_Marks_Matches()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -357,7 +357,7 @@ public class VerificationTests
     }
 
     [Fact]
-    public void VerifyInOrder_failure_message_shows_step_breakdown_and_log()
+    public void VerifyInOrder_Failure_Message_Shows_Step_Breakdown_And_Log()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);

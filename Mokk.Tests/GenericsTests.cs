@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class GenericsTests
 {
     [Fact]
-    public void Exact_type_setup_returns_value()
+    public void Exact_Type_Setup_Returns_Value()
     {
         var mock = new MockTemplatedService();
         mock.DoSomething<int>(Any).Returns(1);
@@ -15,7 +15,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Different_type_args_are_independent()
+    public void Different_Type_Args_Are_Independent()
     {
         var mock = new MockTemplatedService();
         mock.DoSomething<int>(Any).Returns(1);
@@ -26,7 +26,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void AnyType_wildcard_matches_all_type_args_in_verify()
+    public void AnyType_Wildcard_Matches_All_Type_Args_In_Verify()
     {
         var mock = new MockTemplatedService();
 
@@ -37,7 +37,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void AnyType_wildcard_matches_for_callback()
+    public void AnyType_Wildcard_Matches_For_Callback()
     {
         var mock = new MockTemplatedService();
         var count = 0;
@@ -50,7 +50,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Exact_type_wins_over_AnyType_wildcard()
+    public void Exact_Type_Wins_Over_AnyType_Wildcard()
     {
         var mock = new MockTemplatedService();
         mock.DoSomething<AnyType>(Any).Callback(() => { });
@@ -60,7 +60,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Open_generic_interface_can_be_mocked_and_closed_at_use_site()
+    public void Open_Generic_Interface_Can_Be_Mocked_And_Closed_At_Use_Site()
     {
         var mock = new MockMessage<string, int>();
 
@@ -73,7 +73,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Generic_interface_property_and_void_method_work()
+    public void Generic_Interface_Property_And_Void_Method_Work()
     {
         var mock = new MockMessage<string, int>();
 
@@ -85,7 +85,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Generic_interface_event_can_be_raised_with_type_parameters()
+    public void Generic_Interface_Event_Can_Be_Raised_With_Type_Parameters()
     {
         var mock = new MockMessage<string, int>();
         string? key = null;
@@ -99,7 +99,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Different_closings_are_independent_instances()
+    public void Different_Closings_Are_Independent_Instances()
     {
         var ints = new MockMessage<string, int>();
         var strs = new MockMessage<int, string>();
@@ -112,7 +112,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Constrained_generic_interface_is_supported()
+    public void Constrained_Generic_Interface_Is_Supported()
     {
         var mock = new MockBox<Widget>();
         var w = new Widget { Id = 3 };
@@ -125,7 +125,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Same_name_different_arities_coexist_in_one_assembly()
+    public void Same_Name_Different_Arities_Coexist_In_One_Assembly()
     {
         var plain = new MockMessage();
         var one = new MockMessage<int>();
@@ -141,7 +141,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Open_generic_abstract_class_is_supported()
+    public void Open_Generic_Abstract_Class_Is_Supported()
     {
         var mock = new MockCache<string, int>();
 
@@ -154,7 +154,7 @@ public class GenericsTests
     public class Boxed { public int Value; }
 
     [Fact]
-    public void Constrained_generic_method_on_interface_is_setup_and_invoked()
+    public void Constrained_Generic_Method_On_Interface_Is_Setup_And_Invoked()
     {
         var mock = new MockConstrained();
         var made = new Boxed { Value = 7 };
@@ -164,7 +164,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Constrained_generic_void_method_is_verifiable()
+    public void Constrained_Generic_Void_Method_Is_Verifiable()
     {
         var mock = new MockConstrained();
 
@@ -175,7 +175,7 @@ public class GenericsTests
     }
 
     [Fact]
-    public void Constrained_generic_method_override_on_abstract_class()
+    public void Constrained_Generic_Method_Override_On_Abstract_Class()
     {
         var mock = new MockFactory();
         var made = new Boxed();

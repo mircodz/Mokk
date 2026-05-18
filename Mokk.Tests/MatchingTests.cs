@@ -6,7 +6,7 @@ namespace Mokk.Tests;
 public class MatchingTests
 {
     [Fact]
-    public void Wildcard_matches_any_argument()
+    public void Wildcard_Matches_Any_Argument()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -16,7 +16,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Exact_value_match_via_implicit_conversion()
+    public void Exact_Value_Match_Via_Implicit_Conversion()
     {
         var mock = new MockEmailService();
         mock.Send("admin@site.com", Any).Returns(true);
@@ -26,7 +26,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Last_setup_wins_over_earlier()
+    public void Last_Setup_Wins_Over_Earlier()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
@@ -37,7 +37,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Mixed_typed_and_wildcard_arguments()
+    public void Mixed_Typed_And_Wildcard_Arguments()
     {
         var mock = new MockEmailService();
         mock.GetTemplate(Any, 2).Returns("v2-template");
@@ -48,7 +48,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Predicate_matcher_via_Matcher_Is()
+    public void Predicate_Matcher_Via_Matcher_Is()
     {
         var mock = new MockEmailService();
         mock.Send(
@@ -61,7 +61,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Predicate_matcher_via_Arg_Is()
+    public void Predicate_Matcher_Via_Arg_Is()
     {
         var mock = new MockEmailService();
         mock.Send(Arg.Is<string>(s => s.Contains("@")), Any).Returns(true);
@@ -71,7 +71,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Arg_Any_matches_any_value()
+    public void Arg_Any_Matches_Any_Value()
     {
         var mock = new MockEmailService();
         mock.Send(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
@@ -80,7 +80,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Zero_parameter_method_shortcut()
+    public void Zero_Parameter_Method_Shortcut()
     {
         var mock = new MockExtendedService();
         mock.GetName().Returns("Test");
@@ -91,7 +91,7 @@ public class MatchingTests
     }
 
     [Fact]
-    public void Independent_setups_on_different_methods()
+    public void Independent_Setups_On_Different_Methods()
     {
         var mock = new MockEmailService();
         mock.Send(Any, Any).Returns(true);
