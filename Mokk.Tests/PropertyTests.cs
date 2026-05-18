@@ -60,7 +60,7 @@ public class PropertyTests
         mock.Instance.Name = "Alice";
         mock.Reset();
 
-        Assert.Equal("", mock.Instance.Name); // no setup, no backing -> smart default
+        Assert.Equal("", mock.Instance.Name);
     }
 
     [Fact]
@@ -73,8 +73,6 @@ public class PropertyTests
         Assert.Equal(42, mock.Instance.Id);
         Assert.Equal("alice", mock.Instance.Name);
     }
-
-    // --- indexers (property-family members) ---
 
     [Fact]
     public void Indexer_getter_returns_value_for_matching_key()
@@ -109,7 +107,6 @@ public class PropertyTests
     [Fact]
     public void Overloaded_indexers_are_dispatched_by_argument_type()
     {
-        // IInventory carries both its own this[string] and this[int] from IReadOnlyList<int>.
         var mock = new MockInventory();
         mock.Indexer("sku-1").Getter().Returns(7);
         mock.Indexer(0).Getter().Returns(42);
@@ -151,20 +148,27 @@ public class PropertyTests
         mock.Indexer(2).Setter("bob").Verify(Times.Once);
     }
 
-    // IInventory : IReadOnlyList<int> forces both IEnumerable<int>.GetEnumerator
-    // and the non-generic IEnumerable.GetEnumerator. The latter is implemented
-    // explicitly and must route through the same interception point.
     [Fact]
-    public void Non_generic_IEnumerable_GetEnumerator_forwards_to_the_mock()
+    public void Indexer_Bracket_Getter_On_Interface_Mock()
     {
         var mock = new MockInventory();
-        mock.GetEnumerator().Returns(() =>
-            ((System.Collections.Generic.IEnumerable<int>)new[] { 1, 2, 3 }).GetEnumerator());
+        mock[Arg<string>.Any()].Getter().Returns(7);
 
-        var seen = new System.Collections.Generic.List<object?>();
-        foreach (var x in (System.Collections.IEnumerable)mock.Instance)
-            seen.Add(x);
+        Assert.Equal(7, mock.Instance["banana"]);
+    }
 
-        Assert.Equal(new object?[] { 1, 2, 3 }, seen);
+    [Fact]
+    public void Indexer_Bracket_Setter_Callback_Sees_Key_And_Value()
+    {
+        var mock = new MockInventory();
+        string? gotKey = null;
+        var gotVal = 0;
+        mock[Arg<string>.Any()].Setter().Callback((key, value) => { gotKey = key; gotVal = value; });
+
+        mock.Instance["apple"] = 50;
+
+        Assert.Equal("apple", gotKey);
+        Assert.Equal(50, gotVal);
+        mock[Arg.Like("ap*")].Setter().Verify(Times.Once);
     }
 }

@@ -16,6 +16,39 @@ public class AnyMatcher : IMatcher
     public string Describe() => "_";
 }
 
+// Null checks need their own matcher: a PredicateMatcher<T> never sees null
+// (its `actual is T` test fails first).
+public class NullMatcher : IMatcher
+{
+    public bool Matches(object? actual) => actual is null;
+    public string Describe() => "null";
+}
+
+public class NotNullMatcher : IMatcher
+{
+    public bool Matches(object? actual) => actual is not null;
+    public string Describe() => "not null";
+}
+
+// FluentAssertions-style string wildcards: `*` = any run, `?` = one char.
+public class WildcardMatcher(string pattern) : IMatcher
+{
+    private readonly System.Text.RegularExpressions.Regex _regex = new(
+        "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
+            .Replace("\\*", ".*").Replace("\\?", ".") + "$",
+        System.Text.RegularExpressions.RegexOptions.Singleline);
+
+    public bool Matches(object? actual) => actual is string s && _regex.IsMatch(s);
+    public string Describe() => $"like(\"{pattern}\")";
+}
+
+public class RegexMatcher(string pattern) : IMatcher
+{
+    private readonly System.Text.RegularExpressions.Regex _regex = new(pattern);
+    public bool Matches(object? actual) => actual is string s && _regex.IsMatch(s);
+    public string Describe() => $"regex(\"{pattern}\")";
+}
+
 public class EqualityMatcher<T>(T expected) : IMatcher
 {
     public bool Matches(object? actual)

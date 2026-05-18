@@ -3,7 +3,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Mocking abstract classes and interface inheritance.
 public class AbstractClassTests
 {
     [Fact]

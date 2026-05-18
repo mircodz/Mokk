@@ -4,7 +4,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Verify(Times), argument-scoped verification, VerifyInOrder, VerifyNoOtherCalls.
 public class VerificationTests
 {
     [Fact]

@@ -5,8 +5,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Configuring a setup's behaviour: Returns (constant/typed factory), Callback,
-// Throws, and Sequence — for both value-returning and void methods.
 public class ReturnsTests
 {
     [Fact]

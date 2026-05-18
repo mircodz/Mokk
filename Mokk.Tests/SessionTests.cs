@@ -3,7 +3,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Cross-mock ordered verification via a shared MockSession.
 public class SessionTests
 {
     [Fact]

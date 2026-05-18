@@ -7,8 +7,7 @@ namespace Mokk;
 
 internal static class SmartDefaults
 {
-    private static readonly MethodInfo TaskFromResult =
-        typeof(Task).GetMethod(nameof(Task.FromResult))!;
+    private static readonly MethodInfo TaskFromResult = typeof(Task).GetMethod(nameof(Task.FromResult))!;
 
     public static TReturn For<TReturn>()
     {

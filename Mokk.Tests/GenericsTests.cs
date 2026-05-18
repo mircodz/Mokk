@@ -5,8 +5,6 @@ namespace Mokk.Tests;
 
 public class GenericsTests
 {
-    // --- generic methods ---
-
     [Fact]
     public void Exact_type_setup_returns_value()
     {
@@ -60,8 +58,6 @@ public class GenericsTests
 
         Assert.Equal(99, mock.Instance.DoSomething<int>(0));
     }
-
-    // --- open generic types ---
 
     [Fact]
     public void Open_generic_interface_can_be_mocked_and_closed_at_use_site()
@@ -154,8 +150,6 @@ public class GenericsTests
         Assert.Equal(11, mock.Instance.Load("k"));
         mock.Load("k").Verify(Times.Once);
     }
-
-    // --- generic methods with type-parameter constraints ---
 
     public class Boxed { public int Value; }
 

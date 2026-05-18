@@ -20,6 +20,7 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IGrid))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractLookup))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IInitOnly))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IReservedNames))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IRefReturn))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractSeeded))]
 
@@ -151,6 +152,15 @@ public interface IInitOnly
 {
     int Id { get; init; }
     string Name { get; init; }
+}
+
+// Members whose names collide with Mokk's own mock surface; their setup
+// handles must be exposed as {Name}Handle.
+public interface IReservedNames
+{
+    int Instance { get; }
+    void Reset();
+    int Work(int x);
 }
 
 // Mix of ref / ref readonly returns and a normal method: the ref members get

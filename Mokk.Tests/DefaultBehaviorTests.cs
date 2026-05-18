@@ -5,8 +5,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Behaviour when a call has no matching setup: smart defaults, strict mode,
-// and unused-setup reporting.
 public class DefaultBehaviorTests
 {
     [Fact]
@@ -121,5 +119,19 @@ public class DefaultBehaviorTests
         mock.Send(Any, Any).Returns(true);
 
         mock.CheckUnusedSetups(); // no callback => no-op, must not throw
+    }
+
+    [Fact]
+    public void Members_Colliding_With_Mokk_Surface_Use_Handle_Suffix()
+    {
+        var mock = new MockReservedNames();
+        mock.InstanceHandle.Getter().Returns(7);
+        mock.Work(Any).Returns(1);
+
+        Assert.Equal(7, mock.Instance.Instance);
+        Assert.Equal(1, mock.Instance.Work(0));
+
+        mock.Instance.Reset();
+        mock.ResetHandle().Verify(Times.Once); // distinct from Mokk's own Reset()
     }
 }

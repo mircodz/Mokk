@@ -2,29 +2,20 @@ using System;
 
 namespace Mokk;
 
-public sealed class EventHandle
+public sealed class EventHandle(MockInterceptor interceptor, string eventName)
 {
-    private readonly MockInterceptor _interceptor;
-    private readonly string _eventName;
+    public void Raise(params object?[] args) => interceptor.RaiseEvent(eventName, args);
 
-    public EventHandle(MockInterceptor interceptor, string eventName)
-    {
-        _interceptor = interceptor;
-        _eventName = eventName;
-    }
+    public void Raise(object? sender, EventArgs e) => interceptor.RaiseEvent(eventName, [sender, e]);
 
-    public void Raise(params object?[] args) => _interceptor.RaiseEvent(_eventName, args);
+    public int SubscriberCount => interceptor.EventSubscriberCount(eventName);
 
-    public void Raise(object? sender, EventArgs e) => _interceptor.RaiseEvent(_eventName, new[] { sender, e });
+    public void Subscribed(Times times) => interceptor.VerifyEventSubscribed(eventName, null, times);
+    public void Subscribed(Delegate handler, Times times) => interceptor.VerifyEventSubscribed(eventName, handler, times);
 
-    public int SubscriberCount => _interceptor.EventSubscriberCount(_eventName);
+    public void Unsubscribed(Times times) => interceptor.VerifyEventUnsubscribed(eventName, null, times);
+    public void Unsubscribed(Delegate handler, Times times) => interceptor.VerifyEventUnsubscribed(eventName, handler, times);
 
-    public void Subscribed(Times times) => _interceptor.VerifyEventSubscribed(_eventName, null, times);
-    public void Subscribed(Delegate handler, Times times) => _interceptor.VerifyEventSubscribed(_eventName, handler, times);
-
-    public void Unsubscribed(Times times) => _interceptor.VerifyEventUnsubscribed(_eventName, null, times);
-    public void Unsubscribed(Delegate handler, Times times) => _interceptor.VerifyEventUnsubscribed(_eventName, handler, times);
-
-    public void HandlerInvoked(Times times) => _interceptor.VerifyEventHandlerInvoked(_eventName, null, times);
-    public void HandlerInvoked(Delegate handler, Times times) => _interceptor.VerifyEventHandlerInvoked(_eventName, handler, times);
+    public void HandlerInvoked(Times times) => interceptor.VerifyEventHandlerInvoked(eventName, null, times);
+    public void HandlerInvoked(Delegate handler, Times times) => interceptor.VerifyEventHandlerInvoked(eventName, handler, times);
 }

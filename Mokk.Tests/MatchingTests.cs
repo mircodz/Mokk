@@ -3,7 +3,6 @@ using static Mokk.Wildcard;
 
 namespace Mokk.Tests;
 
-// Argument matching: wildcard, exact (implicit conversion), predicate, precedence.
 public class MatchingTests
 {
     [Fact]
@@ -100,5 +99,32 @@ public class MatchingTests
 
         Assert.True(mock.Instance.Send("a@b.com", "hi"));
         Assert.Equal("v2!", mock.Instance.GetTemplate("v2", 1));
+    }
+
+    [Fact]
+    public void Wildcard_And_Regex_String_Matchers()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Arg.Like("*@example.com"), Any).Returns(true);
+        mock.Send(Arg.Regex(@"^\d{3}$"), Any).Returns(true);
+
+        Assert.True(mock.Instance.Send("bob@example.com", "x"));
+        Assert.True(mock.Instance.Send("123", "x"));
+        Assert.False(mock.Instance.Send("nope", "x"));
+    }
+
+    [Fact]
+    public void Null_NotNull_InRange_And_Generic_Arg_Alias()
+    {
+        var mock = new MockEmailService();
+        mock.Send(Arg.NotNull<string>(), Any).Returns(true);
+        mock.GetTemplate(Arg.Like("tmpl-*"), Arg.InRange(1, 3)).Returns("ok");
+        mock.GetTemplate("alias", Arg<int>.Any()).Returns("g");
+
+        Assert.True(mock.Instance.Send("a", "b"));
+        Assert.False(mock.Instance.Send(null!, "b"));      // NotNull rejects null
+        Assert.Equal("ok", mock.Instance.GetTemplate("tmpl-x", 2));
+        Assert.Equal("", mock.Instance.GetTemplate("tmpl-x", 9)); // out of range
+        Assert.Equal("g", mock.Instance.GetTemplate("alias", 99));
     }
 }

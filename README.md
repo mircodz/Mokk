@@ -54,6 +54,11 @@ using static Mokk.Wildcard;
 mock.Send(Any, Any).Returns(true);
 mock.Send("alice@example.com", Any).Returns(true);
 mock.Send(Arg.Is<string>(s => s.EndsWith(".com")), Any).Returns(true);
+
+mock.Send(Arg.Like("*@example.com"), Any).Returns(true);
+mock.Send(Arg.Regex(@"^\S+@\S+$"), Any).Returns(true);
+mock.Send(Arg.NotNull<string>(), Any).Returns(true);
+mock.GetTemplate(Arg.In("a", "b"), Arg.InRange(1, 3)).Returns("ok");
 ```
 
 ## Returns
@@ -148,6 +153,13 @@ mock.UserChanged.HandlerInvoked(handler, Times.Exactly(2));
 ```
 
 Abstract-class mocks expose the raiser as `{EventName}Handle`.
+
+## Indexers
+
+```csharp
+mock.Indexer("apple").Getter().Returns(5);              // any mock
+mock[Arg<string>.Any()].Setter().Callback((k, v) => { });  // interface mocks
+```
 
 ## Verify
 
