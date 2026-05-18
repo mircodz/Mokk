@@ -120,7 +120,13 @@ public class MockGenerator : IIncrementalGenerator
             return new GenericInfo("", "", 0);
 
         var typeParams = $"<{string.Join(", ", tps.Select(tp => tp.Name))}>";
+        return new GenericInfo(typeParams, FormatConstraints(tps), tps.Length);
+    }
 
+    // Builds the " where T : ..." clauses for a set of type parameters. Shared
+    // by the mocked type itself and by individual generic methods.
+    private static string FormatConstraints(IEnumerable<ITypeParameterSymbol> tps)
+    {
         var clauses = new StringBuilder();
         foreach (var tp in tps)
         {
@@ -141,7 +147,7 @@ public class MockGenerator : IIncrementalGenerator
                 clauses.Append($" where {tp.Name} : {string.Join(", ", parts)}");
         }
 
-        return new GenericInfo(typeParams, clauses.ToString(), tps.Length);
+        return clauses.ToString();
     }
 
     private static MemberCollection CollectMembers(INamedTypeSymbol interfaceSymbol)
@@ -313,6 +319,9 @@ public class MockGenerator : IIncrementalGenerator
     {
         var typeParams = TypeParamList(m);
         var typeArgs = TypeArgsExpr(m);
+        // An override inherits its constraints (restating them is CS0460);
+        // an implicit interface implementation must restate them (CS0425).
+        var constraints = prefix.Contains("override") ? "" : m.Constraints;
         var sig = string.Join(", ", m.Parameters.Select(p => $"{p.Modifier}{p.Type} {p.Name}"));
         var argsLiteral = m.Parameters.Count > 0
             ? $"new object?[] {{ {string.Join(", ", m.Parameters.Select(p => p.IsOut ? $"default({p.Type})" : p.Name))} }}"
@@ -321,7 +330,7 @@ public class MockGenerator : IIncrementalGenerator
 
         if (!m.Parameters.Any(p => p.WritesBack))
         {
-            sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig})");
+            sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig}){constraints}");
             sb.AppendLine(m.IsVoid
                 ? $"{indent}    => _interceptor.InterceptVoid(\"{m.Name}\", {typeArgs}, {argsLiteral});"
                 : $"{indent}    => _interceptor.Intercept<{m.ReturnType}>(\"{m.Name}\", {typeArgs}, {argsLiteral});");
@@ -329,7 +338,7 @@ public class MockGenerator : IIncrementalGenerator
             return;
         }
 
-        sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig})");
+        sb.AppendLine($"{indent}{prefix} {ret} {m.Name}{typeParams}({sig}){constraints}");
         sb.AppendLine($"{indent}{{");
         sb.AppendLine($"{indent}    var __args = {argsLiteral};");
         sb.AppendLine(m.IsVoid
@@ -399,12 +408,12 @@ public class MockGenerator : IIncrementalGenerator
 
             if (m.IsVoid)
             {
-                sb.AppendLine($"    public VoidMethodHandle {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"    public VoidMethodHandle {m.Name}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"        => new(_interceptor, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             else
             {
-                sb.AppendLine($"    public MethodHandle<{m.ReturnType}> {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"    public MethodHandle<{m.ReturnType}> {m.Name}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"        => new(_interceptor, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             sb.AppendLine();
@@ -690,12 +699,12 @@ public class MockGenerator : IIncrementalGenerator
 
             if (m.IsVoid)
             {
-                sb.AppendLine($"{i}public VoidMethodHandle {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"{i}public VoidMethodHandle {m.Name}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"{i}    => new({interceptorRef}, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             else
             {
-                sb.AppendLine($"{i}public MethodHandle<{m.ReturnType}> {m.Name}{typeParams}({matcherParms})");
+                sb.AppendLine($"{i}public MethodHandle<{m.ReturnType}> {m.Name}{typeParams}({matcherParms}){m.Constraints}");
                 sb.AppendLine($"{i}    => new({interceptorRef}, \"{m.Name}\", {typeArgsExpr}, {matchersExpr});");
             }
             sb.AppendLine();
@@ -741,6 +750,7 @@ public class MockGenerator : IIncrementalGenerator
         public bool IsProtected { get; private set; }
         public List<ParameterModel> Parameters { get; private set; } = new();
         public List<string> TypeParameterNames { get; private set; } = new();
+        public string Constraints { get; private set; } = "";  // " where T : ..." or ""
 
         public static MethodModel From(IMethodSymbol s) => new()
         {
@@ -749,6 +759,7 @@ public class MockGenerator : IIncrementalGenerator
             ReturnType = s.ReturnType.ToDisplayString(TypeFormat),
             Parameters = s.Parameters.Select(ParameterModel.From).ToList(),
             TypeParameterNames = s.TypeParameters.Select(tp => tp.Name).ToList(),
+            Constraints = FormatConstraints(s.TypeParameters),
             IsProtected = IsProtectedAccess(s),
         };
     }

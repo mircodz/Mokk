@@ -6,6 +6,8 @@ using Mokk;
 [assembly: GenerateMock(typeof(Mokk.Tests.IBaseService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IExtendedService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.ITemplatedService))]
+[assembly: GenerateMock(typeof(Mokk.Tests.IConstrained))]
+[assembly: GenerateMock(typeof(Mokk.Tests.AbstractFactory))]
 [assembly: GenerateMock(typeof(Mokk.Tests.AbstractNotificationService))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IMessage))]
 [assembly: GenerateMock(typeof(Mokk.Tests.IMessage<>))]
@@ -58,6 +60,19 @@ public interface IExtendedService : IBaseService
 public interface ITemplatedService
 {
     T DoSomething<T>(T value);
+}
+
+public interface IConstrained
+{
+    T Create<T>() where T : class, new();
+    void Store<TKey, TValue>(TKey key, TValue value) where TKey : notnull where TValue : struct;
+}
+
+// Abstract class with a constrained generic method: the override must NOT
+// restate the constraints (CS0460), unlike the interface implicit impl.
+public abstract class AbstractFactory
+{
+    public abstract T Make<T>(string tag) where T : class, new();
 }
 
 // Same base name, three different arities, all mocked in one assembly.
