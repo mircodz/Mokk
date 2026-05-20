@@ -289,13 +289,19 @@ mock.Reset();
 ## Benchmarks
 
 ```
-BenchmarkDotNet v0.15.8, .NET 8.0, Linux, 12th Gen Intel Core i7-12700KF
+BenchmarkDotNet v0.15.8, macOS Tahoe 26.2 (25C56) [Darwin 25.2.0]
+Apple M4 Pro, 1 CPU, 14 logical and 14 physical cores                                                                                                                                                                        
+.NET SDK 10.0.103                                                                                                                                                                                                            
+  [Host]     : .NET 8.0.22 (8.0.22, 8.0.2225.52707), Arm64 RyuJIT armv8.0-a                                                                                                                                                  
+  Job-CNUJVU : .NET 8.0.22 (8.0.22, 8.0.2225.52707), Arm64 RyuJIT armv8.0-a                                                                                                                                                  
+                                                                                                                                                                                                                             
+InvocationCount=1  UnrollFactor=1  
 
-| Method      | Mean       | Error      | StdDev     | Rank | Gen0   | Gen1   | Allocated |
-|------------ |-----------:|-----------:|-----------:|-----:|-------:|-------:|----------:|
-| Mokk        | 164.042 ns |  8.3301 ns |  4.3568 ns |    1 | 0.0219 | 0.0055 |    1056 B |
-| Imposter    | 202.634 ns | 11.0567 ns |  7.3133 ns |    2 | 0.0124 | 0.0119 |     168 B |
-| Moq         | 290.735 ns | 14.6240 ns |  9.6729 ns |    3 | 0.0205 | 0.0100 |     528 B |
-| NSubstitute | 357.505 ns | 11.7103 ns |  7.7456 ns |    4 | 0.0219 | 0.0110 |     304 B |
-| FakeItEasy  | 953.988 ns | 30.6226 ns | 20.2550 ns |    5 | 0.0591 | 0.0572 |     808 B |
+| Method      | Mean       | Error     | StdDev   | Median     | Rank | Allocated |
+|------------ |-----------:|----------:|---------:|-----------:|-----:|----------:|
+| Mokk        |   636.3 ns |  65.01 ns | 185.5 ns |   583.5 ns |    1 |     136 B |                                                                                                                                          
+| Imposter    |   735.8 ns |  73.45 ns | 207.2 ns |   667.5 ns |    1 |     216 B |
+| Moq         | 1,291.8 ns | 155.02 ns | 437.2 ns | 1,208.0 ns |    2 |     336 B |
+| FakeItEasy  | 1,437.2 ns | 128.79 ns | 363.3 ns | 1,333.0 ns |    2 |     824 B |
+| NSubstitute | 1,614.7 ns | 183.38 ns | 505.1 ns | 1,458.0 ns |    2 |     288 B |
 ```

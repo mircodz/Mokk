@@ -16,13 +16,12 @@ namespace Mokk.Benchmarks;
 /// The Mokk call log is reset after each iteration to prevent unbounded growth.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RuntimeMoniker.Net80, warmupCount: 3, iterationCount: 10)]
 [Orderer(SummaryOrderPolicy.FastestToSlowest)]
 [RankColumn]
 public class MethodCallBenchmarks
 {
-    private MockBenchmarkService _spectermock = null!;
-    private IBenchmarkService _specter = null!;
+    private MockBenchmarkService _mokkMock = null!;
+    private IBenchmarkService _mokk = null!;
     private IBenchmarkService _moq = null!;
     private IBenchmarkService _nsubstitute = null!;
     private IBenchmarkService _fakeItEasy = null!;
@@ -32,9 +31,9 @@ public class MethodCallBenchmarks
     public void Setup()
     {
         // Mokk
-        _spectermock = new MockBenchmarkService();
-        _spectermock.Process(Wildcard.Any).Returns(true);
-        _specter = _spectermock.Instance;
+        _mokkMock = new MockBenchmarkService();
+        _mokkMock.Process(Wildcard.Any).Returns(true);
+        _mokk = _mokkMock.Instance;
 
         // Moq
         var m = new MoqMock();
@@ -57,10 +56,13 @@ public class MethodCallBenchmarks
     }
 
     [IterationSetup]
-    public void IterationSetup() => _spectermock.Reset();
+    public void IterationSetup()
+    {
+        _mokkMock.Reset();
+    }
 
     [Benchmark(Description = "Mokk")]
-    public bool Mokk() => _specter.Process("hello");
+    public bool Mokk() => _mokk.Process("hello");
 
     [Benchmark(Description = "Moq")]
     public bool Moq() => _moq.Process("hello");
