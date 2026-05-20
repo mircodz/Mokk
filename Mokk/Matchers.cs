@@ -30,6 +30,14 @@ public class NotNullMatcher : IMatcher
     public string Describe() => "not null";
 }
 
+// Reference identity: useful when the equality override would lie (records, or
+// types where Equals is structural but the test cares about which instance).
+public class SameMatcher(object expected) : IMatcher
+{
+    public bool Matches(object? actual) => ReferenceEquals(actual, expected);
+    public string Describe() => $"same as {expected}";
+}
+
 // FluentAssertions-style string wildcards: `*` = any run, `?` = one char.
 public class WildcardMatcher(string pattern) : IMatcher
 {

@@ -17,6 +17,11 @@ public static class Arg
 
     public static Matcher<T> NotNull<T>() => Matcher<T>.From(new NotNullMatcher());
 
+    /// <summary>Matches the same reference (<see cref="object.ReferenceEquals"/>),
+    /// bypassing any <c>Equals</c> override.</summary>
+    public static Matcher<T> Same<T>(T instance) where T : class
+        => Matcher<T>.From(new SameMatcher(instance));
+
     /// <summary>Wildcard match: <c>*</c> = any run, <c>?</c> = one char.</summary>
     public static Matcher<string> Like(string wildcard)
         => Matcher<string>.From(new WildcardMatcher(wildcard));

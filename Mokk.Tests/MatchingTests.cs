@@ -127,4 +127,18 @@ public class MatchingTests
         Assert.Equal("", mock.Instance.GetTemplate("tmpl-x", 9)); // out of range
         Assert.Equal("g", mock.Instance.GetTemplate("alias", 99));
     }
+
+    private record Box(int N);
+
+    [Fact]
+    public void Arg_Same_Matches_By_Reference_Not_By_Equals_Override()
+    {
+        var a = new Box(7);
+        var b = new Box(7); // structurally equal, different reference
+        var m = Arg.Same(a);
+
+        Assert.True(m.Inner.Matches(a));
+        Assert.False(m.Inner.Matches(b));
+        Assert.False(m.Inner.Matches(null));
+    }
 }
